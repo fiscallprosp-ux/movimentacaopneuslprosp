@@ -4,23 +4,27 @@ let state = {
     carretas: []
 };
 
+// Domínio padrão para conversão de usuário -> e-mail do Firebase
+const DEFAULT_DOMAIN = '@lprosp.com';
+
 // ----------------------------------------------------
 // GERENCIAMENTO DE AUTENTICAÇÃO
 // ----------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
-    // Monitora o estado da autenticação
     window.auth.onAuthStateChanged((user) => {
         const loginScreen = document.getElementById('login-screen');
         const appScreen = document.getElementById('app-screen');
 
         if (user) {
-            // Usuário logado
             loginScreen.classList.add('hidden');
             appScreen.classList.remove('hidden');
-            document.getElementById('user-display-email').innerText = `L-PROSP • ${user.email}`;
+            
+            // Pega apenas a parte do usuário antes do @ (ex: lprosp)
+            const username = user.email.split('@')[0].toUpperCase();
+            document.getElementById('user-display-email').innerText = `L-PROSP • USUÁRIO: ${username}`;
+
             initRealtimeSync();
         } else {
-            // Usuário deslogado
             loginScreen.classList.remove('hidden');
             appScreen.classList.add('hidden');
         }
@@ -29,16 +33,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function handleLogin(e) {
     e.preventDefault();
-    const email = document.getElementById('login-email').value;
+    let usuario = document.getElementById('login-email').value.trim().toLowerCase();
     const password = document.getElementById('login-password').value;
     const errorDiv = document.getElementById('login-error');
 
     errorDiv.classList.add('hidden');
 
+    // Se a pessoa digitou apenas o nome (ex: "lprosp"), adiciona o sufixo padrão
+    if (!usuario.includes('@')) {
+        usuario = `${usuario}${DEFAULT_DOMAIN}`;
+    }
+
     try {
-        await window.auth.signInWithEmailAndPassword(email, password);
+        await window.auth.signInWithEmailAndPassword(usuario, password);
     } catch (error) {
-        errorDiv.innerText = "Falha ao entrar. Verifique o e-mail e a senha digitados.";
+        console.error("Erro no login:", error);
+        errorDiv.innerText = "Usuário ou senha inválidos. Verifique suas credenciais.";
         errorDiv.classList.remove('hidden');
     }
 }
@@ -48,7 +58,7 @@ function handleLogout() {
 }
 
 // ----------------------------------------------------
-// SINCRONIZAÇÃO EM TEMPO REAL
+// SINCRONIZAÇÃO EM TEMPO REAL (FIREBASE)
 // ----------------------------------------------------
 function initRealtimeSync() {
     window.rtdb.ref('pneus').on('value', (snapshot) => {
@@ -75,7 +85,7 @@ function seedInitialData() {
 }
 
 // ----------------------------------------------------
-// NAVEGAÇÃO
+// NAVEGAÇÃO ENTRE ABAS
 // ----------------------------------------------------
 function navigate(page) {
     currentPage = page;
@@ -247,7 +257,7 @@ function renderPneusView(container) {
 }
 
 // ----------------------------------------------------
-// 4. AÇÕES (MONTAGEM / DESMONTAGEM / CADASTRO)
+// 4. AÇÕES (MONTAGEM / DESMONTAGEM / CADASTROS)
 // ----------------------------------------------------
 function handleSlotClick(carretaId, posicao) {
     const pneuInstalado = state.pneus.find(p => p.carretaId === carretaId && p.posicao === posicao);
@@ -292,9 +302,8 @@ function confirmarMontagem(e, carretaId, posicao) {
         status: 'Em Uso',
         carretaId: carretaId,
         posicao: posicao
-    });
-
-    closeModal();
+    }).then(() => closeModal())
+      .catch(err => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
 }
 
 function showDesmontarModal(pneu) {
@@ -335,9 +344,8 @@ function confirmarDesmontagem(e, pneuId) {
         status: destino,
         carretaId: null,
         posicao: null
-    });
-
-    closeModal();
+    }).then(() => closeModal())
+      .catch(err => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
 }
 
 function showAddTireModal() {
@@ -394,8 +402,9 @@ function cadastrarPneu(e) {
         kmRodados: 0
     };
 
-    window.rtdb.ref('pneus').push(novoPneu);
-    closeModal();
+    window.rtdb.ref('pneus').push(novoPneu)
+        .then(() => closeModal())
+        .catch(err => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
 }
 
 function showAddCarretaModal() {
@@ -443,8 +452,9 @@ function cadastrarCarreta(e) {
         kmAtual: parseInt(document.getElementById('carreta-km').value)
     };
 
-    window.rtdb.ref('carretas').push(novaCarreta);
-    closeModal();
+    window.rtdb.ref('carretas').push(novaCarreta)
+        .then(() => closeModal())
+        .catch(err => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
 }
 
 // Helpers Modal
