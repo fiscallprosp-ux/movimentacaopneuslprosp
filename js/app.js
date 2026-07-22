@@ -25,7 +25,7 @@ const state = {
     user: null,
     veiculos: [],
     pneus: [],
-    currentTab: 'veiculos',
+    currentTab: 'carretas',
     searchTerm: ''
 };
 
@@ -173,7 +173,7 @@ function renderApp() {
     const container = document.getElementById('main-container');
     if (!container) return;
 
-    if (state.currentTab === 'veiculos') {
+    if (state.currentTab === 'carretas') {
         renderVeiculosView(container);
     } else {
         renderPneusView(container);
@@ -334,7 +334,7 @@ function renderVeiculosView(container) {
                                  class="draggable-tire estoque-item bg-slate-50 border border-slate-200 hover:border-blue-500 rounded-xl p-3 flex flex-col items-center justify-center transition shadow-sm cursor-grab">
                                 <i class="fas fa-circle-notch text-2xl text-blue-600 mb-1"></i>
                                 <span class="font-black text-xs text-slate-800 font-mono">${escapeHtml(pneu.fuego)}</span>
-                                <span class="text-[10px] text-slate-500">${pneu.sulcoAtual} mm</span>
+                                <span class="text-[10px] text-slate-500">${pneu.sulcoAtual ?? '-'} mm</span>
                             </div>
                         `).join('')}
                     </div>
@@ -351,12 +351,12 @@ function renderSlotPneu(veiculoId, pos, pneusDoVeiculo) {
     const pneu = pneusDoVeiculo.find(p => p.posicao === pos);
     return `
         <div ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToSlot(event, '${veiculoId}', '${pos}')"
-             class="w-12 h-20 rounded-lg border-2 ${pneu ? (pneu.sulcoAtual <= 3 ? 'border-red-500 bg-red-950/60' : 'border-blue-500 bg-blue-950/60') : 'border-dashed border-slate-700 bg-slate-800/40'} 
+             class="w-12 h-20 rounded-lg border-2 ${pneu ? ((pneu.sulcoAtual ?? 99) <= 3 ? 'border-red-500 bg-red-950/60' : 'border-blue-500 bg-blue-950/60') : 'border-dashed border-slate-700 bg-slate-800/40'} 
              flex flex-col items-center justify-center p-1 transition-all relative group cursor-pointer">
             ${pneu ? `
                 <div draggable="true" ondragstart="handleDragStart(event, '${pneu.id}')" class="text-center w-full">
                     <span class="block font-black text-[11px] text-white leading-tight font-mono">${escapeHtml(pneu.fuego)}</span>
-                    <span class="block text-[9px] ${pneu.sulcoAtual <= 3 ? 'text-red-400 font-bold' : 'text-slate-300'}">${pneu.sulcoAtual}mm</span>
+                    <span class="block text-[9px] ${(pneu.sulcoAtual ?? 99) <= 3 ? 'text-red-400 font-bold' : 'text-slate-300'}">${pneu.sulcoAtual ?? '-'}mm</span>
                 </div>
                 <div class="absolute -bottom-4 text-[8px] font-bold text-slate-400 font-mono">${pos}</div>
             ` : `
@@ -446,6 +446,12 @@ function filterEstoqueVisual(term) {
 // ====================================================
 // MODAL DE VEÍCULO / NOVA CARRETA
 // ====================================================
+// Alias: o botão global "Nova Carreta" no header (index.html) chama showAddCarretaModal(),
+// que não existia antes e dependia apenas do hack de correspondência de texto em vincularEventosNavegacao().
+function showAddCarretaModal() {
+    showAddVeiculoModal();
+}
+
 function showAddVeiculoModal() {
     openModal(`
         <div class="p-6">
@@ -550,7 +556,7 @@ function renderPneusView(container) {
                                 <tr>
                                     <td class="p-3.5 font-black text-slate-800 font-mono">${escapeHtml(pneu.fuego)}</td>
                                     <td class="p-3.5 text-slate-600">${escapeHtml(pneu.marca || '-')} (${escapeHtml(pneu.medida || '-')})</td>
-                                    <td class="p-3.5 font-semibold ${pneu.sulcoAtual <= 3 ? 'text-red-600' : 'text-slate-800'}">${pneu.sulcoAtual} mm</td>
+                                    <td class="p-3.5 font-semibold ${(pneu.sulcoAtual ?? 99) <= 3 ? 'text-red-600' : 'text-slate-800'}">${pneu.sulcoAtual ?? '-'} mm</td>
                                     <td class="p-3.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">${pneu.status}</span></td>
                                     <td class="p-3.5 text-slate-600">${veiculo ? `${escapeHtml(veiculo.placa)} (${pneu.posicao})` : 'Estoque'}</td>
                                     <td class="p-3.5 text-right"><button onclick="deletarPneu('${pneu.id}')" class="text-slate-400 hover:text-red-500"><i class="fas fa-trash-can"></i></button></td>
