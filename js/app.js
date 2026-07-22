@@ -1,6 +1,52 @@
 let currentPage = 'dashboard';
+let state = {
+    pneus: [],
+    carretas: []
+};
 
-// Navegação de Telas por Abas
+// ----------------------------------------------------
+// SINCRONIZAÇÃO COM O REALTIME DATABASE
+// ----------------------------------------------------
+window.addEventListener('DOMContentLoaded', () => {
+    const checkFirebase = setInterval(() => {
+        if (window.rtdb) {
+            clearInterval(checkFirebase);
+            initRealtimeSync();
+        }
+    }, 100);
+});
+
+function initRealtimeSync() {
+    // Escuta Pneus em tempo real
+    window.dbOnValue(window.dbRef(window.rtdb, 'pneus'), (snapshot) => {
+        const data = snapshot.val();
+        state.pneus = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+        renderPage();
+    });
+
+    // Escuta Carretas em tempo real
+    window.dbOnValue(window.dbRef(window.rtdb, 'carretas'), (snapshot) => {
+        const data = snapshot.val();
+        state.carretas = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+
+        // Adiciona carretas iniciais se o banco estiver 100% vazio
+        if (state.carretas.length === 0 && !data) {
+            seedInitialData();
+        } else {
+            renderPage();
+        }
+    });
+}
+
+async function seedInitialData() {
+    const carretasRef = window.dbRef(window.rtdb, 'carretas');
+    await window.dbPush(carretasRef, { placa: 'ABC-1234', modelo: '3 Eixos Standard', kmAtual: 145000, eixos: 3 });
+    await window.dbPush(carretasRef, { placa: 'XYZ-9876', modelo: 'Vanderléia 3 Eixos', kmAtual: 92000, eixos: 3 });
+}
+
+// ----------------------------------------------------
+// NAVEGAÇÃO
+// ----------------------------------------------------
 function navigate(page) {
     currentPage = page;
     document.querySelectorAll('#sidebar-nav button').forEach(btn => {
@@ -23,32 +69,29 @@ function renderPage() {
 }
 
 // ----------------------------------------------------
-// 1. DASHBOARD CLARO
+// 1. DASHBOARD
 // ----------------------------------------------------
 function renderDashboard(container) {
-    const pneus = DB.get('pneus');
-    const carretas = DB.get('carretas');
-
-    const emUso = pneus.filter(p => p.status === 'Em Uso').length;
-    const emEstoque = pneus.filter(p => p.status === 'Estoque').length;
-    const criticos = pneus.filter(p => p.sulcoAtual <= 3.0 && p.status !== 'Descartado');
+    const emUso = state.pneus.filter(p => p.status === 'Em Uso').length;
+    const emEstoque = state.pneus.filter(p => p.status === 'Estoque').length;
+    const criticos = state.pneus.filter(p => p.sulcoAtual <= 3.0 && p.status !== 'Descartado');
 
     container.innerHTML = `
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-center">
-                <p class="text-xs font-bold font-heading text-slate-500 uppercase tracking-wider">Total de Carretas</p>
-                <h3 class="text-3xl font-bold text-slate-800 mt-1">${carretas.length}</h3>
+                <p class="text-xs font-bold font-heading text-slate-500 uppercase">Total de Carretas</p>
+                <h3 class="text-3xl font-bold text-slate-800 mt-1">${state.carretas.length}</h3>
             </div>
             <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-center border-b-4 border-b-lprosp-blue">
-                <p class="text-xs font-bold font-heading text-slate-500 uppercase tracking-wider">Pneus Em Uso</p>
+                <p class="text-xs font-bold font-heading text-slate-500 uppercase">Pneus Em Uso</p>
                 <h3 class="text-3xl font-bold text-lprosp-blue mt-1">${emUso}</h3>
             </div>
             <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-center border-b-4 border-b-lprosp-green">
-                <p class="text-xs font-bold font-heading text-slate-500 uppercase tracking-wider">Pneus no Estoque</p>
+                <p class="text-xs font-bold font-heading text-slate-500 uppercase">Pneus no Estoque</p>
                 <h3 class="text-3xl font-bold text-lprosp-green mt-1">${emEstoque}</h3>
             </div>
             <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-center border-b-4 border-b-lprosp-red">
-                <p class="text-xs font-bold font-heading text-slate-500 uppercase tracking-wider">Alertas (&le; 3mm)</p>
+                <p class="text-xs font-bold font-heading text-slate-500 uppercase">Alertas (&le; 3mm)</p>
                 <h3 class="text-3xl font-bold text-lprosp-red mt-1">${criticos.length}</h3>
             </div>
         </div>
@@ -65,7 +108,7 @@ function renderDashboard(container) {
                                 <span class="font-bold text-slate-800">${p.fuego}</span> - <span class="text-slate-600 text-sm">${p.marca} (${p.medida})</span>
                                 <p class="text-xs text-slate-500 mt-0.5">Sulco Atual: <b class="text-lprosp-red">${p.sulcoAtual} mm</b></p>
                             </div>
-                            <span class="px-3 py-1 rounded-lg text-xs font-bold font-heading bg-lprosp-red text-white uppercase tracking-wider">Atenção Imediata</span>
+                            <span class="px-3 py-1 rounded-lg text-xs font-bold font-heading bg-lprosp-red text-white uppercase">Atenção Imediata</span>
                         </div>
                     `).join('')}
                 </div>
@@ -75,31 +118,27 @@ function renderDashboard(container) {
 }
 
 // ----------------------------------------------------
-// 2. GESTÃO DE CARRETAS
+// 2. CARRETAS & PÁTIO VISUAL
 // ----------------------------------------------------
 function renderCarretasView(container) {
-    const carretas = DB.get('carretas');
-    const pneus = DB.get('pneus');
-
     container.innerHTML = `
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            ${carretas.map(carreta => {
-                const pneusDaCarreta = pneus.filter(p => p.carretaId === carreta.id);
+            ${state.carretas.map(carreta => {
+                const pneusDaCarreta = state.pneus.filter(p => p.carretaId === carreta.id);
                 return `
                     <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
                         <div class="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
                             <div>
                                 <h3 class="text-xl font-bold text-slate-800 font-heading">${carreta.placa}</h3>
-                                <p class="text-xs text-slate-500">${carreta.modelo} • ${carreta.kmAtual.toLocaleString()} KM</p>
+                                <p class="text-xs text-slate-500">${carreta.modelo} • ${carreta.kmAtual?.toLocaleString() || 0} KM</p>
                             </div>
                             <span class="bg-lprosp-blue-light text-lprosp-blue border border-lprosp-blue/20 text-xs px-3 py-1 rounded-lg font-bold font-heading">
                                 ${carreta.eixos} EIXOS
                             </span>
                         </div>
 
-                        <!-- Esquema Visual da Carreta -->
                         <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 my-2 flex flex-col items-center gap-4">
-                            <div class="text-[10px] text-slate-400 font-bold font-heading uppercase tracking-widest">Frente da Carreta</div>
+                            <div class="text-[10px] text-slate-400 font-bold font-heading uppercase">Frente da Carreta</div>
                             
                             ${[1, 2, 3].slice(0, carreta.eixos).map(eixo => {
                                 const posEsquerda = `E${eixo}E`;
@@ -109,7 +148,6 @@ function renderCarretasView(container) {
 
                                 return `
                                     <div class="flex items-center justify-center gap-6 w-full">
-                                        <!-- Pneu Esquerdo -->
                                         <button onclick="handleSlotClick('${carreta.id}', '${posEsquerda}')" 
                                             class="w-28 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold shadow-sm
                                             ${pneuE ? (pneuE.sulcoAtual <= 3 ? 'bg-red-50 border-lprosp-red text-lprosp-red' : 'bg-blue-50 border-lprosp-blue text-lprosp-blue') : 'bg-white border-dashed border-slate-300 text-slate-400 hover:border-slate-400'}">
@@ -117,10 +155,8 @@ function renderCarretasView(container) {
                                             <span class="text-[10px] opacity-75">${pneuE ? `${pneuE.sulcoAtual}mm` : posEsquerda}</span>
                                         </button>
 
-                                        <!-- Eixo -->
                                         <div class="h-2 flex-1 bg-slate-300 rounded-full"></div>
 
-                                        <!-- Pneu Direito -->
                                         <button onclick="handleSlotClick('${carreta.id}', '${posDireita}')" 
                                             class="w-28 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold shadow-sm
                                             ${pneuD ? (pneuD.sulcoAtual <= 3 ? 'bg-red-50 border-lprosp-red text-lprosp-red' : 'bg-blue-50 border-lprosp-blue text-lprosp-blue') : 'bg-white border-dashed border-slate-300 text-slate-400 hover:border-slate-400'}">
@@ -139,12 +175,10 @@ function renderCarretasView(container) {
 }
 
 // ----------------------------------------------------
-// 3. AÇÕES DE MONTAGEM E DESMONTAGEM
+// 3. AÇÕES (MONTAGEM / DESMONTAGEM / CADASTRO)
 // ----------------------------------------------------
 function handleSlotClick(carretaId, posicao) {
-    const pneus = DB.get('pneus');
-    const pneuInstalado = pneus.find(p => p.carretaId === carretaId && p.posicao === posicao);
-
+    const pneuInstalado = state.pneus.find(p => p.carretaId === carretaId && p.posicao === posicao);
     if (pneuInstalado) {
         showDesmontarModal(pneuInstalado);
     } else {
@@ -153,7 +187,7 @@ function handleSlotClick(carretaId, posicao) {
 }
 
 function showMontarModal(carretaId, posicao) {
-    const pneusDisponiveis = DB.get('pneus').filter(p => p.status === 'Estoque');
+    const pneusDisponiveis = state.pneus.filter(p => p.status === 'Estoque');
 
     openModal(`
         <div class="p-6">
@@ -164,13 +198,13 @@ function showMontarModal(carretaId, posicao) {
                 <form onsubmit="confirmarMontagem(event, '${carretaId}', '${posicao}')" class="space-y-4">
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">SELECIONE O PNEU</label>
-                        <select id="montar-pneu-id" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
+                        <select id="montar-pneu-id" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800" required>
                             ${pneusDisponiveis.map(p => `<option value="${p.id}">${p.fuego} - ${p.marca} (${p.sulcoAtual}mm)</option>`).join('')}
                         </select>
                     </div>
                     <div class="flex justify-end gap-2 mt-6">
                         <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
-                        <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue hover:bg-lprosp-blue-dark text-white text-xs font-bold font-heading">INSTALAR PNEU</button>
+                        <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue text-white text-xs font-bold font-heading">INSTALAR PNEU</button>
                     </div>
                 </form>
             `}
@@ -178,21 +212,18 @@ function showMontarModal(carretaId, posicao) {
     `);
 }
 
-function confirmarMontagem(e, carretaId, posicao) {
+async function confirmarMontagem(e, carretaId, posicao) {
     e.preventDefault();
     const pneuId = document.getElementById('montar-pneu-id').value;
-    const pneus = DB.get('pneus');
 
-    const index = pneus.findIndex(p => p.id === pneuId);
-    if (index !== -1) {
-        pneus[index].status = 'Em Uso';
-        pneus[index].carretaId = carretaId;
-        pneus[index].posicao = posicao;
-        DB.set('pneus', pneus);
-    }
+    const pneuRef = window.dbRef(window.rtdb, `pneus/${pneuId}`);
+    await window.dbUpdate(pneuRef, {
+        status: 'Em Uso',
+        carretaId: carretaId,
+        posicao: posicao
+    });
 
     closeModal();
-    renderPage();
 }
 
 function showDesmontarModal(pneu) {
@@ -204,11 +235,11 @@ function showDesmontarModal(pneu) {
             <form onsubmit="confirmarDesmontagem(event, '${pneu.id}')" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">MEDIÇÃO DE SULCO ATUAL (MM)</label>
-                    <input type="number" step="0.1" id="desmontar-sulco" value="${pneu.sulcoAtual}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
+                    <input type="number" step="0.1" id="desmontar-sulco" value="${pneu.sulcoAtual}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800" required>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">DESTINO DO PNEU</label>
-                    <select id="desmontar-destino" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue">
+                    <select id="desmontar-destino" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800">
                         <option value="Estoque">Retornar ao Estoque</option>
                         <option value="Reforma">Enviar para Reforma / Recape</option>
                         <option value="Descartado">Descarte / Sucata</option>
@@ -216,36 +247,29 @@ function showDesmontarModal(pneu) {
                 </div>
                 <div class="flex justify-end gap-2 mt-6">
                     <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-red hover:bg-lprosp-red-hover text-white text-xs font-bold font-heading">CONFIRMAR DESMONTAGEM</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-red text-white text-xs font-bold font-heading">CONFIRMAR DESMONTAGEM</button>
                 </div>
             </form>
         </div>
     `);
 }
 
-function confirmarDesmontagem(e, pneuId) {
+async function confirmarDesmontagem(e, pneuId) {
     e.preventDefault();
     const sulco = parseFloat(document.getElementById('desmontar-sulco').value);
     const destino = document.getElementById('desmontar-destino').value;
 
-    const pneus = DB.get('pneus');
-    const index = pneus.findIndex(p => p.id === pneuId);
-
-    if (index !== -1) {
-        pneus[index].sulcoAtual = sulco;
-        pneus[index].status = destino;
-        pneus[index].carretaId = null;
-        pneus[index].posicao = null;
-        DB.set('pneus', pneus);
-    }
+    const pneuRef = window.dbRef(window.rtdb, `pneus/${pneuId}`);
+    await window.dbUpdate(pneuRef, {
+        sulcoAtual: sulco,
+        status: destino,
+        carretaId: null,
+        posicao: null
+    });
 
     closeModal();
-    renderPage();
 }
 
-// ----------------------------------------------------
-// 4. MODAIS DE CADASTRO
-// ----------------------------------------------------
 function showAddTireModal() {
     openModal(`
         <div class="p-6">
@@ -254,42 +278,40 @@ function showAddTireModal() {
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE FOGO</label>
-                        <input type="text" id="pneu-fuego" placeholder="Ex: P-102" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
+                        <input type="text" id="pneu-fuego" placeholder="Ex: P-102" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">MARCA</label>
-                        <input type="text" id="pneu-marca" placeholder="Ex: Michelin" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
+                        <input type="text" id="pneu-marca" placeholder="Ex: Michelin" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">MEDIDA</label>
-                        <input type="text" id="pneu-medida" value="295/80 R22.5" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
+                        <input type="text" id="pneu-medida" value="295/80 R22.5" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">SULCO NOVO (MM)</label>
-                        <input type="number" step="0.1" id="pneu-sulco" value="15" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
+                        <input type="number" step="0.1" id="pneu-sulco" value="15" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                     </div>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">VALOR DE COMPRA (R$)</label>
-                    <input type="number" id="pneu-valor" placeholder="2200" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
+                    <input type="number" id="pneu-valor" placeholder="2200" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                 </div>
                 <div class="flex justify-end gap-2 mt-6">
                     <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue hover:bg-lprosp-blue-dark text-white text-xs font-bold font-heading">SALVAR PNEU</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue text-white text-xs font-bold font-heading">SALVAR PNEU</button>
                 </div>
             </form>
         </div>
     `);
 }
 
-function cadastrarPneu(e) {
+async function cadastrarPneu(e) {
     e.preventDefault();
-    const pneus = DB.get('pneus');
 
     const novoPneu = {
-        id: Date.now().toString(),
         fuego: document.getElementById('pneu-fuego').value,
         marca: document.getElementById('pneu-marca').value,
         medida: document.getElementById('pneu-medida').value,
@@ -302,13 +324,13 @@ function cadastrarPneu(e) {
         kmRodados: 0
     };
 
-    pneus.push(novoPneu);
-    DB.set('pneus', pneus);
+    const pneusRef = window.dbRef(window.rtdb, 'pneus');
+    await window.dbPush(pneusRef, novoPneu);
+
     closeModal();
-    renderPage();
 }
 
-// Helpers de Modal
+// Helpers Modal
 function openModal(content) {
     document.getElementById('modal-content').innerHTML = content;
     document.getElementById('modal').classList.remove('hidden');
@@ -317,6 +339,3 @@ function openModal(content) {
 function closeModal() {
     document.getElementById('modal').classList.add('hidden');
 }
-
-// Inicializar a aplicação
-navigate('dashboard');
