@@ -21,10 +21,14 @@ window.auth = firebase.auth();
 // ====================================================
 // ESTADO GLOBAL DA APLICAÇÃO
 // ====================================================
+// Limite recomendado de reformas por pneu (ajuste conforme a política da empresa/fabricante)
+const LIMITE_REFORMAS_RECOMENDADO = 2;
+
 const state = {
     user: null,
     veiculos: [],
     pneus: [],
+    historico: [],
     currentTab: 'carretas',
     searchTerm: ''
 };
@@ -67,6 +71,12 @@ function initRealtimeListeners() {
         state.pneus = Object.keys(data).map(key => ({ id: key, ...data[key] }));
         updateQuickStats();
         renderApp();
+    });
+
+    window.rtdb.ref('historico').on('value', snapshot => {
+        const data = snapshot.val() || {};
+        state.historico = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+        if (state.currentTab === 'analise') renderApp();
     });
 }
 
@@ -193,10 +203,27 @@ function renderApp() {
 
     if (state.currentTab === 'carretas') {
         renderVeiculosView(container);
-    } else {
+    } else if (state.currentTab === 'pneus') {
         renderPneusView(container);
+    } else {
+        renderAnaliseView(container);
     }
     vincularEventosNavegacao();
+}
+
+// ====================================================
+// MÉTRICAS DE VIDA ÚTIL / CUSTO POR PNEU
+// ====================================================
+function calcularMetricasPneu(pneu) {
+    let kmEmAndamento = 0;
+    if (pneu.status === 'Em Uso' && pneu.kmInstalacaoAtual != null) {
+        const veiculo = state.veiculos.find(v => v.id === pneu.veiculoId);
+        if (veiculo) kmEmAndamento = Math.max(0, (veiculo.kmAtual || 0) - pneu.kmInstalacaoAtual);
+    }
+    const kmTotal = (pneu.kmRodadoTotal || 0) + kmEmAndamento;
+    const custoTotal = (pneu.valorPago || 0) + (pneu.custoReformasTotal || 0);
+    const custoPorKm = kmTotal > 0 ? custoTotal / kmTotal : null;
+    return { kmTotal, custoTotal, custoPorKm };
 }
 
 // ====================================================
@@ -347,14 +374,17 @@ function renderVeiculosView(container) {
 
                     <div id="visual-estoque-grid" class="grid grid-cols-2 gap-2.5 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
                         ${pneusEstoque.length === 0 ? '<p class="col-span-2 text-center text-slate-400 text-xs py-8">Nenhum pneu em estoque.</p>' :
-                        pneusEstoque.map(pneu => `
+                        pneusEstoque.map(pneu => {
+                            const noLimite = (pneu.qtdReformas || 0) >= LIMITE_REFORMAS_RECOMENDADO;
+                            return `
                             <div draggable="true" ondragstart="handleDragStart(event, '${pneu.id}')"
-                                 class="draggable-tire estoque-item bg-slate-50 border border-slate-200 hover:border-blue-500 rounded-xl p-3 flex flex-col items-center justify-center transition shadow-sm cursor-grab">
+                                 class="draggable-tire estoque-item ${noLimite ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'} border hover:border-blue-500 rounded-xl p-3 flex flex-col items-center justify-center transition shadow-sm cursor-grab relative">
+                                ${noLimite ? `<i class="fas fa-triangle-exclamation text-red-500 text-[10px] absolute top-1.5 right-1.5" title="Atingiu o limite recomendado de ${LIMITE_REFORMAS_RECOMENDADO} reformas"></i>` : ''}
                                 <i class="fas fa-circle-notch text-2xl text-blue-600 mb-1"></i>
                                 <span class="font-black text-xs text-slate-800 font-mono">${escapeHtml(pneu.fuego)}</span>
                                 <span class="text-[10px] text-slate-500">${pneu.sulcoAtual ?? '-'} mm</span>
                             </div>
-                        `).join('')}
+                        `;}).join('')}
                     </div>
                 </div>
             </div>
@@ -406,11 +436,68 @@ function handleDropToSlot(e, veiculoId, posicao) {
     const pneuId = e.dataTransfer.getData('text/plain');
     if (!pneuId) return;
 
-    window.rtdb.ref(`pneus/${pneuId}`).update({
-        status: 'Em Uso',
+    const pneu = state.pneus.find(p => p.id === pneuId);
+    const veiculo = state.veiculos.find(v => v.id === veiculoId);
+    if (!pneu || !veiculo) return;
+
+    showMontarModal(pneu, veiculo, posicao);
+}
+
+function showMontarModal(pneu, veiculo, posicao) {
+    openModal(`
+        <div class="p-6">
+            <h3 class="text-lg font-bold text-slate-800 mb-1">Montar Pneu ${escapeHtml(pneu.fuego)}</h3>
+            <p class="text-xs text-slate-500 mb-4">Veículo <b class="text-blue-600">${escapeHtml(veiculo.placa)}</b> • Posição <b class="text-blue-600">${posicao}</b>. Informe o KM atual do veículo neste momento.</p>
+            <form onsubmit="confirmarMontagem(event, '${pneu.id}', '${veiculo.id}', '${posicao}')" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL DO VEÍCULO</label>
+                    <input type="number" id="montar-km" value="${veiculo.kmAtual || 0}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800" required>
+                </div>
+                <div class="flex justify-end gap-2 mt-6">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">CANCELAR</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">CONFIRMAR MONTAGEM</button>
+                </div>
+            </form>
+        </div>
+    `);
+}
+
+function confirmarMontagem(e, pneuId, veiculoId, posicao) {
+    e.preventDefault();
+    const km = parseInt(document.getElementById('montar-km').value);
+    const pneu = state.pneus.find(p => p.id === pneuId);
+    const veiculo = state.veiculos.find(v => v.id === veiculoId);
+    if (!pneu || !veiculo) { closeModal(); return; }
+
+    if (km < (veiculo.kmAtual || 0)) {
+        showToast(`Atenção: KM informado (${km}) é menor que o KM atual do veículo (${veiculo.kmAtual || 0}). Verifique antes de confirmar.`, "error");
+        return;
+    }
+
+    const updates = {};
+    updates[`pneus/${pneuId}/status`] = 'Em Uso';
+    updates[`pneus/${pneuId}/veiculoId`] = veiculoId;
+    updates[`pneus/${pneuId}/posicao`] = posicao;
+    updates[`pneus/${pneuId}/kmInstalacaoAtual`] = km;
+    updates[`veiculos/${veiculoId}/kmAtual`] = km;
+
+    const histRef = window.rtdb.ref('historico').push();
+    updates[`historico/${histRef.key}`] = {
+        pneuId: pneuId,
+        fuego: pneu.fuego,
+        tipo: 'Montagem',
+        data: Date.now(),
         veiculoId: veiculoId,
-        posicao: posicao
-    }).then(() => showToast(`Pneu alocado na posição ${posicao}!`, "success"));
+        placa: veiculo.placa,
+        posicao: posicao,
+        kmVeiculo: km,
+        sulco: pneu.sulcoAtual ?? null
+    };
+
+    window.rtdb.ref().update(updates).then(() => {
+        closeModal();
+        showToast(`Pneu montado na posição ${posicao}!`, "success");
+    });
 }
 
 function handleDropToZone(e, destinoStatus) {
@@ -421,15 +508,26 @@ function handleDropToZone(e, destinoStatus) {
 }
 
 function showDesmontarModal(pneu, destino) {
+    const veiculo = state.veiculos.find(v => v.id === pneu.veiculoId);
     openModal(`
         <div class="p-6">
             <h3 class="text-lg font-bold text-slate-800 mb-1">Mover Pneu ${escapeHtml(pneu.fuego)}</h3>
-            <p class="text-xs text-slate-500 mb-4">Destino selecionado: <b class="text-blue-600">${destino}</b>. Atualize o sulco atual.</p>
+            <p class="text-xs text-slate-500 mb-4">Destino selecionado: <b class="text-blue-600">${destino}</b>. Atualize o sulco e o KM do veículo neste momento.</p>
             <form onsubmit="confirmarMovimentacao(event, '${pneu.id}', '${destino}')" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">SULCO MEDIDO (MM)</label>
                     <input type="number" step="0.1" id="drag-sulco" value="${pneu.sulcoAtual || 10}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800" required>
                 </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL DO VEÍCULO</label>
+                    <input type="number" id="drag-km" value="${veiculo ? (veiculo.kmAtual || 0) : ''}" placeholder="${veiculo ? '' : 'Pneu já estava fora de veículo'}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800" ${veiculo ? 'required' : ''}>
+                </div>
+                ${destino === 'Reforma' ? `
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">CUSTO DA REFORMA (R$)</label>
+                    <input type="number" step="0.01" id="drag-custo-reforma" value="0" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800">
+                </div>
+                ` : ''}
                 <div class="flex justify-end gap-2 mt-6">
                     <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">CANCELAR</button>
                     <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">CONFIRMAR</button>
@@ -442,12 +540,61 @@ function showDesmontarModal(pneu, destino) {
 function confirmarMovimentacao(e, pneuId, destino) {
     e.preventDefault();
     const sulco = parseFloat(document.getElementById('drag-sulco').value);
-    window.rtdb.ref(`pneus/${pneuId}`).update({
-        sulcoAtual: sulco,
-        status: destino,
-        veiculoId: null,
-        posicao: null
-    }).then(() => {
+    const kmInput = document.getElementById('drag-km');
+    const kmInformado = kmInput.value ? parseInt(kmInput.value) : null;
+    const custoReformaInput = document.getElementById('drag-custo-reforma');
+    const custoReforma = custoReformaInput ? (parseFloat(custoReformaInput.value) || 0) : 0;
+
+    const pneu = state.pneus.find(p => p.id === pneuId);
+    if (!pneu) { closeModal(); return; }
+
+    const veiculo = state.veiculos.find(v => v.id === pneu.veiculoId);
+
+    let cicloKm = 0;
+    if (veiculo && kmInformado !== null && pneu.kmInstalacaoAtual != null) {
+        cicloKm = kmInformado - pneu.kmInstalacaoAtual;
+        if (cicloKm < 0) {
+            showToast(`Atenção: KM informado é menor que o KM de instalação (${pneu.kmInstalacaoAtual}). Verifique antes de confirmar.`, "error");
+            return;
+        }
+    }
+    const kmRodadoTotalNovo = (pneu.kmRodadoTotal || 0) + cicloKm;
+    const qtdReformasNova = destino === 'Reforma' ? (pneu.qtdReformas || 0) + 1 : (pneu.qtdReformas || 0);
+
+    const updates = {};
+    updates[`pneus/${pneuId}/sulcoAtual`] = sulco;
+    updates[`pneus/${pneuId}/status`] = destino;
+    updates[`pneus/${pneuId}/veiculoId`] = null;
+    updates[`pneus/${pneuId}/posicao`] = null;
+    updates[`pneus/${pneuId}/kmInstalacaoAtual`] = null;
+    updates[`pneus/${pneuId}/kmRodadoTotal`] = kmRodadoTotalNovo;
+    if (destino === 'Reforma') {
+        updates[`pneus/${pneuId}/qtdReformas`] = qtdReformasNova;
+    }
+    if (custoReforma > 0) {
+        updates[`pneus/${pneuId}/custoReformasTotal`] = (pneu.custoReformasTotal || 0) + custoReforma;
+    }
+    if (veiculo && kmInformado !== null) {
+        updates[`veiculos/${veiculo.id}/kmAtual`] = kmInformado;
+    }
+
+    const histRef = window.rtdb.ref('historico').push();
+    updates[`historico/${histRef.key}`] = {
+        pneuId: pneuId,
+        fuego: pneu.fuego,
+        tipo: destino === 'Estoque' ? 'Desmontagem' : (destino === 'Reforma' ? 'Reforma' : 'Descarte'),
+        data: Date.now(),
+        veiculoId: pneu.veiculoId || null,
+        placa: veiculo ? veiculo.placa : null,
+        posicao: pneu.posicao || null,
+        kmVeiculo: kmInformado,
+        kmRodadoCiclo: cicloKm,
+        sulco: sulco,
+        custo: custoReforma > 0 ? custoReforma : null,
+        qtdReformas: destino === 'Reforma' ? qtdReformasNova : null
+    };
+
+    window.rtdb.ref().update(updates).then(() => {
         closeModal();
         showToast(`Pneu movido para ${destino}!`, "success");
     });
@@ -501,6 +648,10 @@ function showAddVeiculoModal() {
                         </select>
                     </div>
                 </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL DO VEÍCULO (opcional)</label>
+                    <input type="number" id="veiculo-km" placeholder="0" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs">
+                </div>
                 <div class="flex justify-end gap-2 mt-6">
                     <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">CANCELAR</button>
                     <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">SALVAR VEÍCULO</button>
@@ -516,6 +667,7 @@ function salvarVeiculo(e) {
     const placa = document.getElementById('veiculo-placa').value.toUpperCase().trim();
     const modelo = document.getElementById('veiculo-modelo').value.trim();
     const eixos = parseInt(document.getElementById('veiculo-eixos').value);
+    const kmAtual = parseInt(document.getElementById('veiculo-km').value) || 0;
 
     const jaExiste = state.veiculos.some(v => v.placa === placa);
     if (jaExiste) {
@@ -528,7 +680,7 @@ function salvarVeiculo(e) {
         placa: placa,
         modelo: modelo,
         eixos: eixos,
-        kmAtual: 0
+        kmAtual: kmAtual
     }).then(() => {
         closeModal();
         showToast("Veículo cadastrado!", "success");
@@ -537,14 +689,36 @@ function salvarVeiculo(e) {
 
 function deletarVeiculo(id, placa) {
     if (confirm(`Confirma a exclusão do veículo ${placa}? Os pneus montados nele voltarão para o estoque.`)) {
+        const veiculo = state.veiculos.find(v => v.id === id);
+        const kmFinal = veiculo ? (veiculo.kmAtual || 0) : 0;
+
         // Devolve para o estoque todos os pneus que estavam montados neste veículo,
+        // fechando o km rodado do ciclo com o último km conhecido do veículo,
         // evitando que fiquem "órfãos" (Em Uso apontando para um veiculoId inexistente)
         const pneusDoVeiculo = state.pneus.filter(p => p.veiculoId === id);
         const updates = {};
         pneusDoVeiculo.forEach(p => {
+            const cicloKm = p.kmInstalacaoAtual != null ? Math.max(0, kmFinal - p.kmInstalacaoAtual) : 0;
             updates[`pneus/${p.id}/status`] = 'Estoque';
             updates[`pneus/${p.id}/veiculoId`] = null;
             updates[`pneus/${p.id}/posicao`] = null;
+            updates[`pneus/${p.id}/kmInstalacaoAtual`] = null;
+            updates[`pneus/${p.id}/kmRodadoTotal`] = (p.kmRodadoTotal || 0) + cicloKm;
+
+            const histRef = window.rtdb.ref('historico').push();
+            updates[`historico/${histRef.key}`] = {
+                pneuId: p.id,
+                fuego: p.fuego,
+                tipo: 'Desmontagem (veículo excluído)',
+                data: Date.now(),
+                veiculoId: id,
+                placa: placa,
+                posicao: p.posicao || null,
+                kmVeiculo: kmFinal,
+                kmRodadoCiclo: cicloKm,
+                sulco: p.sulcoAtual ?? null,
+                custo: null
+            };
         });
         updates[`veiculos/${id}`] = null;
 
@@ -579,14 +753,20 @@ function renderPneusView(container) {
                             <th class="p-3.5">Sulco</th>
                             <th class="p-3.5">Status</th>
                             <th class="p-3.5">Veículo / Pos.</th>
+                            <th class="p-3.5">Km Rodado</th>
+                            <th class="p-3.5">Custo/Km</th>
+                            <th class="p-3.5">Reformas</th>
                             <th class="p-3.5 text-right">Ações</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
                         ${pneusFiltrados.length === 0 ? `
-                            <tr><td colspan="6" class="p-8 text-center text-slate-400">Nenhum pneu encontrado.</td></tr>
+                            <tr><td colspan="9" class="p-8 text-center text-slate-400">Nenhum pneu encontrado.</td></tr>
                         ` : pneusFiltrados.map(pneu => {
                             const veiculo = state.veiculos.find(v => v.id === pneu.veiculoId);
+                            const { kmTotal, custoPorKm } = calcularMetricasPneu(pneu);
+                            const qtdReformas = pneu.qtdReformas || 0;
+                            const noLimite = qtdReformas >= LIMITE_REFORMAS_RECOMENDADO;
                             return `
                                 <tr>
                                     <td class="p-3.5 font-black text-slate-800 font-mono">${escapeHtml(pneu.fuego)}</td>
@@ -594,7 +774,17 @@ function renderPneusView(container) {
                                     <td class="p-3.5 font-semibold ${(pneu.sulcoAtual ?? 99) <= 3 ? 'text-red-600' : 'text-slate-800'}">${pneu.sulcoAtual ?? '-'} mm</td>
                                     <td class="p-3.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">${pneu.status}</span></td>
                                     <td class="p-3.5 text-slate-600">${veiculo ? `${escapeHtml(veiculo.placa)} (${pneu.posicao})` : 'Estoque'}</td>
-                                    <td class="p-3.5 text-right"><button onclick="deletarPneu('${pneu.id}')" class="text-slate-400 hover:text-red-500"><i class="fas fa-trash-can"></i></button></td>
+                                    <td class="p-3.5 text-slate-600">${kmTotal.toLocaleString('pt-BR')} km</td>
+                                    <td class="p-3.5 text-slate-600">${custoPorKm !== null ? 'R$ ' + custoPorKm.toFixed(3) : '-'}</td>
+                                    <td class="p-3.5">
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${noLimite ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}" ${noLimite ? `title="Atingiu o limite recomendado de ${LIMITE_REFORMAS_RECOMENDADO} reformas"` : ''}>
+                                            ${qtdReformas}${noLimite ? ' <i class="fas fa-triangle-exclamation"></i>' : ''}
+                                        </span>
+                                    </td>
+                                    <td class="p-3.5 text-right">
+                                        <button onclick="showHistoricoPneu('${pneu.id}')" title="Ver histórico" class="text-slate-400 hover:text-blue-600 mr-2"><i class="fas fa-clock-rotate-left"></i></button>
+                                        <button onclick="deletarPneu('${pneu.id}')" title="Excluir" class="text-slate-400 hover:text-red-500"><i class="fas fa-trash-can"></i></button>
+                                    </td>
                                 </tr>
                             `;
                         }).join('')}
@@ -605,7 +795,167 @@ function renderPneusView(container) {
     `;
 }
 
+function showHistoricoPneu(pneuId) {
+    const pneu = state.pneus.find(p => p.id === pneuId);
+    if (!pneu) return;
+
+    const eventos = state.historico
+        .filter(h => h.pneuId === pneuId)
+        .sort((a, b) => b.data - a.data);
+
+    const { kmTotal, custoTotal, custoPorKm } = calcularMetricasPneu(pneu);
+
+    openModal(`
+        <div class="p-6 max-h-[80vh] overflow-y-auto">
+            <h3 class="text-lg font-bold text-slate-800 mb-1">Histórico do Pneu ${escapeHtml(pneu.fuego)}</h3>
+            <p class="text-xs text-slate-500 mb-4">${escapeHtml(pneu.marca || '-')} • ${escapeHtml(pneu.medida || '-')}</p>
+
+            <div class="grid grid-cols-4 gap-2 mb-4">
+                <div class="bg-slate-50 rounded-xl p-3 text-center">
+                    <div class="text-[10px] text-slate-400 font-bold uppercase">Km Rodado</div>
+                    <div class="text-sm font-black text-slate-800">${kmTotal.toLocaleString('pt-BR')}</div>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-3 text-center">
+                    <div class="text-[10px] text-slate-400 font-bold uppercase">Custo Total</div>
+                    <div class="text-sm font-black text-slate-800">R$ ${custoTotal.toFixed(2)}</div>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-3 text-center">
+                    <div class="text-[10px] text-slate-400 font-bold uppercase">Custo/Km</div>
+                    <div class="text-sm font-black text-slate-800">${custoPorKm !== null ? 'R$ ' + custoPorKm.toFixed(3) : '-'}</div>
+                </div>
+                <div class="rounded-xl p-3 text-center ${(pneu.qtdReformas || 0) >= LIMITE_REFORMAS_RECOMENDADO ? 'bg-red-50' : 'bg-slate-50'}">
+                    <div class="text-[10px] text-slate-400 font-bold uppercase">Reformas</div>
+                    <div class="text-sm font-black ${(pneu.qtdReformas || 0) >= LIMITE_REFORMAS_RECOMENDADO ? 'text-red-600' : 'text-slate-800'}">${pneu.qtdReformas || 0}</div>
+                </div>
+            </div>
+            ${(pneu.qtdReformas || 0) >= LIMITE_REFORMAS_RECOMENDADO ? `
+                <div class="bg-red-50 border border-red-200 text-red-700 text-[11px] font-bold rounded-xl p-3 mb-4 flex items-center gap-2">
+                    <i class="fas fa-triangle-exclamation"></i>
+                    Este pneu já atingiu o limite recomendado de ${LIMITE_REFORMAS_RECOMENDADO} reformas. Avalie se ainda é seguro utilizar.
+                </div>
+            ` : ''}
+
+            <div class="space-y-2">
+                ${eventos.length === 0 ? `
+                    <p class="text-center text-slate-400 text-xs py-6">Nenhum evento registrado ainda.</p>
+                ` : eventos.map(ev => `
+                    <div class="border border-slate-200 rounded-xl p-3 text-xs">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-slate-800">${escapeHtml(ev.tipo)}</span>
+                            <span class="text-slate-400">${new Date(ev.data).toLocaleString('pt-BR')}</span>
+                        </div>
+                        <div class="text-slate-500 flex flex-wrap gap-x-4">
+                            ${ev.placa ? `<span>Veículo: ${escapeHtml(ev.placa)}</span>` : ''}
+                            ${ev.posicao ? `<span>Posição: ${ev.posicao}</span>` : ''}
+                            ${ev.kmVeiculo != null ? `<span>Km: ${ev.kmVeiculo.toLocaleString('pt-BR')}</span>` : ''}
+                            ${ev.kmRodadoCiclo ? `<span>Rodou neste ciclo: ${ev.kmRodadoCiclo.toLocaleString('pt-BR')} km</span>` : ''}
+                            ${ev.sulco != null ? `<span>Sulco: ${ev.sulco} mm</span>` : ''}
+                            ${ev.custo ? `<span>Custo: R$ ${ev.custo.toFixed(2)}</span>` : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+
+            <div class="flex justify-end mt-6">
+                <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">FECHAR</button>
+            </div>
+        </div>
+    `);
+}
+
+// ====================================================
+// DASHBOARD DE ANÁLISE (VIDA ÚTIL / CUSTO / MARCAS)
+// ====================================================
+function renderAnaliseView(container) {
+    const porMarca = {};
+    state.pneus.forEach(pneu => {
+        const marca = pneu.marca || 'Sem marca';
+        const { kmTotal, custoTotal } = calcularMetricasPneu(pneu);
+        if (!porMarca[marca]) {
+            porMarca[marca] = { marca, qtdPneus: 0, custoTotal: 0, kmTotal: 0, qtdDescartados: 0, kmTotalDescartados: 0 };
+        }
+        porMarca[marca].qtdPneus++;
+        porMarca[marca].custoTotal += custoTotal;
+        porMarca[marca].kmTotal += kmTotal;
+        if (pneu.status === 'Descartado') {
+            porMarca[marca].qtdDescartados++;
+            porMarca[marca].kmTotalDescartados += kmTotal;
+        }
+    });
+
+    const ranking = Object.values(porMarca).map(m => ({
+        ...m,
+        custoPorKm: m.kmTotal > 0 ? m.custoTotal / m.kmTotal : null,
+        kmMedioAteDescarte: m.qtdDescartados > 0 ? m.kmTotalDescartados / m.qtdDescartados : null
+    })).sort((a, b) => {
+        if (a.custoPorKm === null) return 1;
+        if (b.custoPorKm === null) return -1;
+        return a.custoPorKm - b.custoPorKm;
+    });
+
+    const totalInvestido = state.pneus.reduce((acc, p) => acc + calcularMetricasPneu(p).custoTotal, 0);
+    const totalKmRodado = state.pneus.reduce((acc, p) => acc + calcularMetricasPneu(p).kmTotal, 0);
+    const custoMedioGeral = totalKmRodado > 0 ? totalInvestido / totalKmRodado : null;
+
+    container.innerHTML = `
+        <div class="space-y-6">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                    <div class="text-[10px] text-slate-400 font-bold uppercase mb-1">Total Investido em Pneus</div>
+                    <div class="text-xl font-black text-slate-800">R$ ${totalInvestido.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                    <div class="text-[10px] text-slate-400 font-bold uppercase mb-1">Km Total Rodado (frota de pneus)</div>
+                    <div class="text-xl font-black text-slate-800">${totalKmRodado.toLocaleString('pt-BR')} km</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                    <div class="text-[10px] text-slate-400 font-bold uppercase mb-1">Custo Médio Geral / Km</div>
+                    <div class="text-xl font-black text-slate-800">${custoMedioGeral !== null ? 'R$ ' + custoMedioGeral.toFixed(3) : '-'}</div>
+                </div>
+            </div>
+
+            <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                <div class="p-5 border-b border-slate-100">
+                    <h3 class="font-bold text-slate-800 text-sm">RANKING DE MARCAS (menor custo/km primeiro)</h3>
+                    <p class="text-[10px] text-slate-400 mt-1">Custo/km considera valor pago + reformas dividido pelo km total rodado por todos os pneus da marca.</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
+                            <tr>
+                                <th class="p-3.5">Marca</th>
+                                <th class="p-3.5">Qtd Pneus</th>
+                                <th class="p-3.5">Km Total Rodado</th>
+                                <th class="p-3.5">Investido Total</th>
+                                <th class="p-3.5">Custo/Km</th>
+                                <th class="p-3.5">Km Médio até Descarte</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            ${ranking.length === 0 ? `
+                                <tr><td colspan="6" class="p-8 text-center text-slate-400">Nenhum pneu cadastrado ainda.</td></tr>
+                            ` : ranking.map((m, i) => `
+                                <tr class="${i === 0 && m.custoPorKm !== null ? 'bg-emerald-50' : ''}">
+                                    <td class="p-3.5 font-black text-slate-800">${escapeHtml(m.marca)} ${i === 0 && m.custoPorKm !== null ? '<i class="fas fa-trophy text-amber-500 ml-1" title="Melhor custo-benefício"></i>' : ''}</td>
+                                    <td class="p-3.5 text-slate-600">${m.qtdPneus}</td>
+                                    <td class="p-3.5 text-slate-600">${m.kmTotal.toLocaleString('pt-BR')} km</td>
+                                    <td class="p-3.5 text-slate-600">R$ ${m.custoTotal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                                    <td class="p-3.5 font-semibold text-slate-800">${m.custoPorKm !== null ? 'R$ ' + m.custoPorKm.toFixed(3) : '-'}</td>
+                                    <td class="p-3.5 text-slate-600">${m.kmMedioAteDescarte !== null ? Math.round(m.kmMedioAteDescarte).toLocaleString('pt-BR') + ' km' : '- (nenhum descartado ainda)'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <p class="text-[10px] text-slate-400 text-center">Dica: o custo/km só aparece quando o pneu já rodou alguma distância (montado em um veículo com km informado na montagem e na desmontagem).</p>
+        </div>
+    `;
+}
+
 function showAddPneuModal() {
+    const hoje = new Date().toISOString().split('T')[0];
     openModal(`
         <div class="p-6">
             <h3 class="text-lg font-bold text-slate-800 mb-4">Cadastrar Pneus em Lote</h3>
@@ -628,6 +978,16 @@ function showAddPneuModal() {
                     <label class="block text-xs font-bold text-slate-600 mb-1">SULCO INICIAL (MM)</label>
                     <input type="number" step="0.1" id="pneu-sulco" value="15.0" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
                 </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">VALOR PAGO POR UNIDADE (R$)</label>
+                        <input type="number" step="0.01" id="pneu-valor" placeholder="Ex: 2350.00" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">DATA DA COMPRA</label>
+                        <input type="date" id="pneu-data-compra" value="${hoje}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                    </div>
+                </div>
                 <div class="flex justify-end gap-2 mt-6">
                     <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">CANCELAR</button>
                     <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">SALVAR</button>
@@ -643,6 +1003,8 @@ function salvarPneusEmLote(e) {
     const marca = document.getElementById('pneu-marca').value;
     const medida = document.getElementById('pneu-medida').value;
     const sulco = parseFloat(document.getElementById('pneu-sulco').value);
+    const valorPago = parseFloat(document.getElementById('pneu-valor').value) || 0;
+    const dataCompra = document.getElementById('pneu-data-compra').value;
 
     const fuegosDigitados = fuegosRaw.split(/[\n,]+/).map(f => f.trim()).filter(f => f.length > 0);
     const fuegosExistentes = new Set(state.pneus.map(p => p.fuego));
@@ -664,9 +1026,28 @@ function salvarPneusEmLote(e) {
             marca: marca,
             medida: medida,
             sulcoAtual: sulco,
+            sulcoInicial: sulco,
             status: 'Estoque',
             veiculoId: null,
-            posicao: null
+            posicao: null,
+            valorPago: valorPago,
+            dataCompra: dataCompra,
+            kmInstalacaoAtual: null,
+            kmRodadoTotal: 0,
+            custoReformasTotal: 0,
+            qtdReformas: 0
+        };
+        const histRef = window.rtdb.ref('historico').push();
+        updates[`historico/${histRef.key}`] = {
+            pneuId: newRef.key,
+            fuego: fuego,
+            tipo: 'Cadastro',
+            data: Date.now(),
+            veiculoId: null,
+            placa: null,
+            posicao: null,
+            kmVeiculo: null,
+            sulco: sulco
         };
     });
 
