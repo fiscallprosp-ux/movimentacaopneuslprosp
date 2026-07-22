@@ -19,7 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
             loginScreen.classList.add('hidden');
             appScreen.classList.remove('hidden');
             
-            // Pega apenas a parte do usuário antes do @ (ex: lprosp)
             const username = user.email.split('@')[0].toUpperCase();
             document.getElementById('user-display-email').innerText = `L-PROSP • USUÁRIO: ${username}`;
 
@@ -39,7 +38,6 @@ async function handleLogin(e) {
 
     errorDiv.classList.add('hidden');
 
-    // Se a pessoa digitou apenas o nome (ex: "lprosp"), adiciona o sufixo padrão
     if (!usuario.includes('@')) {
         usuario = `${usuario}${DEFAULT_DOMAIN}`;
     }
@@ -70,18 +68,8 @@ function initRealtimeSync() {
     window.rtdb.ref('carretas').on('value', (snapshot) => {
         const data = snapshot.val();
         state.carretas = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-
-        if (state.carretas.length === 0 && !data) {
-            seedInitialData();
-        } else {
-            renderPage();
-        }
+        renderPage();
     });
-}
-
-function seedInitialData() {
-    window.rtdb.ref('carretas').push({ placa: 'ABC-1234', modelo: '3 Eixos Standard', kmAtual: 145000, eixos: 3 });
-    window.rtdb.ref('carretas').push({ placa: 'XYZ-9876', modelo: 'Vanderléia 3 Eixos', kmAtual: 92000, eixos: 3 });
 }
 
 // ----------------------------------------------------
@@ -160,23 +148,44 @@ function renderDashboard(container) {
 }
 
 // ----------------------------------------------------
-// 2. CARRETAS & PÁTIO VISUAL
+// 2. CARRETAS / PÁTIO (COM EDITAR E EXCLUIR)
 // ----------------------------------------------------
 function renderCarretasView(container) {
+    if (state.carretas.length === 0) {
+        container.innerHTML = `
+            <div class="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400">
+                <i class="fas fa-truck-front text-4xl mb-3 text-slate-300"></i>
+                <p class="font-bold font-heading text-slate-600">NENHUMA CARRETA CADASTRADA</p>
+                <p class="text-xs text-slate-400 mt-1">Clique em "+ NOVA CARRETA" para cadastrar sua frota.</p>
+            </div>
+        `;
+        return;
+    }
+
     container.innerHTML = `
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             ${state.carretas.map(carreta => {
                 const pneusDaCarreta = state.pneus.filter(p => p.carretaId === carreta.id);
                 return `
                     <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                        <div class="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                        <div class="flex justify-between items-start mb-4 border-b border-slate-100 pb-3">
                             <div>
                                 <h3 class="text-xl font-bold text-slate-800 font-heading">${carreta.placa}</h3>
                                 <p class="text-xs text-slate-500">${carreta.modelo} • ${carreta.kmAtual?.toLocaleString() || 0} KM</p>
                             </div>
-                            <span class="bg-lprosp-blue-light text-lprosp-blue border border-lprosp-blue/20 text-xs px-3 py-1 rounded-lg font-bold font-heading">
-                                ${carreta.eixos} EIXOS
-                            </span>
+                            <div class="flex items-center gap-2">
+                                <span class="bg-lprosp-blue-light text-lprosp-blue border border-lprosp-blue/20 text-xs px-2.5 py-1 rounded-lg font-bold font-heading">
+                                    ${carreta.eixos} EIXOS
+                                </span>
+                                <!-- Botão Editar Carreta -->
+                                <button onclick="showEditCarretaModal('${carreta.id}')" title="Editar Carreta" class="text-slate-400 hover:text-lprosp-blue p-1 transition">
+                                    <i class="fas fa-pen-to-square text-sm"></i>
+                                </button>
+                                <!-- Botão Excluir Carreta -->
+                                <button onclick="deletarCarreta('${carreta.id}', '${carreta.placa}')" title="Excluir Carreta" class="text-slate-400 hover:text-lprosp-red p-1 transition">
+                                    <i class="fas fa-trash-can text-sm"></i>
+                                </button>
+                            </div>
                         </div>
 
                         <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 my-2 flex flex-col items-center gap-4">
@@ -217,7 +226,7 @@ function renderCarretasView(container) {
 }
 
 // ----------------------------------------------------
-// 3. ESTOQUE DE PNEUS
+// 3. ESTOQUE DE PNEUS (COM EDITAR E EXCLUIR)
 // ----------------------------------------------------
 function renderPneusView(container) {
     container.innerHTML = `
@@ -233,6 +242,7 @@ function renderPneusView(container) {
                                 <th class="p-3">SULCO ATUAL</th>
                                 <th class="p-3">STATUS</th>
                                 <th class="p-3">LOCALIZAÇÃO</th>
+                                <th class="p-3 text-right">AÇÕES</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
@@ -245,6 +255,16 @@ function renderPneusView(container) {
                                         <td class="p-3 font-bold ${p.sulcoAtual <= 3 ? 'text-lprosp-red' : 'text-slate-800'}">${p.sulcoAtual} mm</td>
                                         <td class="p-3"><span class="px-2 py-1 rounded text-[10px] font-bold ${p.status === 'Em Uso' ? 'bg-blue-100 text-lprosp-blue' : 'bg-emerald-100 text-lprosp-green'}">${p.status}</span></td>
                                         <td class="p-3 text-slate-500">${carreta ? `${carreta.placa} (${p.posicao})` : 'Estoque Central'}</td>
+                                        <td class="p-3 text-right flex justify-end gap-2">
+                                            <!-- Botão Editar Pneu -->
+                                            <button onclick="showEditTireModal('${p.id}')" title="Editar Pneu" class="text-slate-400 hover:text-lprosp-blue p-1 transition">
+                                                <i class="fas fa-pen-to-square text-sm"></i>
+                                            </button>
+                                            <!-- Botão Excluir Pneu -->
+                                            <button onclick="deletarPneu('${p.id}', '${p.fuego}')" title="Excluir Pneu" class="text-slate-400 hover:text-lprosp-red p-1 transition">
+                                                <i class="fas fa-trash-can text-sm"></i>
+                                            </button>
+                                        </td>
                                     </tr>
                                 `;
                             }).join('')}
@@ -257,7 +277,7 @@ function renderPneusView(container) {
 }
 
 // ----------------------------------------------------
-// 4. AÇÕES (MONTAGEM / DESMONTAGEM / CADASTROS)
+// 4. AÇÕES DE MONTAGEM E DESMONTAGEM
 // ----------------------------------------------------
 function handleSlotClick(carretaId, posicao) {
     const pneuInstalado = state.pneus.find(p => p.carretaId === carretaId && p.posicao === posicao);
@@ -303,7 +323,7 @@ function confirmarMontagem(e, carretaId, posicao) {
         carretaId: carretaId,
         posicao: posicao
     }).then(() => closeModal())
-      .catch(err => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
+      .catch(() => alert("Erro ao salvar. Verifique suas permissões."));
 }
 
 function showDesmontarModal(pneu) {
@@ -345,9 +365,12 @@ function confirmarDesmontagem(e, pneuId) {
         carretaId: null,
         posicao: null
     }).then(() => closeModal())
-      .catch(err => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
+      .catch(() => alert("Erro ao salvar. Verifique suas permissões."));
 }
 
+// ----------------------------------------------------
+// 5. MODAIS DE CADASTRO E EDIÇÃO DE PNEUS
+// ----------------------------------------------------
 function showAddTireModal() {
     openModal(`
         <div class="p-6">
@@ -388,7 +411,6 @@ function showAddTireModal() {
 
 function cadastrarPneu(e) {
     e.preventDefault();
-
     const novoPneu = {
         fuego: document.getElementById('pneu-fuego').value,
         marca: document.getElementById('pneu-marca').value,
@@ -404,9 +426,72 @@ function cadastrarPneu(e) {
 
     window.rtdb.ref('pneus').push(novoPneu)
         .then(() => closeModal())
-        .catch(err => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
+        .catch(() => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
 }
 
+function showEditTireModal(pneuId) {
+    const pneu = state.pneus.find(p => p.id === pneuId);
+    if (!pneu) return;
+
+    openModal(`
+        <div class="p-6">
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">EDITAR PNEU ${pneu.fuego}</h3>
+            <form onsubmit="salvarEdicaoPneu(event, '${pneu.id}')" class="space-y-4">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE FOGO</label>
+                        <input type="text" id="pneu-fuego" value="${pneu.fuego}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">MARCA</label>
+                        <input type="text" id="pneu-marca" value="${pneu.marca}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">MEDIDA</label>
+                        <input type="text" id="pneu-medida" value="${pneu.medida}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">SULCO ATUAL (MM)</label>
+                        <input type="number" step="0.1" id="pneu-sulco" value="${pneu.sulcoAtual}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">VALOR DE COMPRA (R$)</label>
+                    <input type="number" id="pneu-valor" value="${pneu.valor || 0}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                </div>
+                <div class="flex justify-end gap-2 mt-6">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue text-white text-xs font-bold font-heading">SALVAR ALTERAÇÕES</button>
+                </div>
+            </form>
+        </div>
+    `);
+}
+
+function salvarEdicaoPneu(e, pneuId) {
+    e.preventDefault();
+    window.rtdb.ref(`pneus/${pneuId}`).update({
+        fuego: document.getElementById('pneu-fuego').value,
+        marca: document.getElementById('pneu-marca').value,
+        medida: document.getElementById('pneu-medida').value,
+        sulcoAtual: parseFloat(document.getElementById('pneu-sulco').value),
+        valor: parseFloat(document.getElementById('pneu-valor').value)
+    }).then(() => closeModal())
+      .catch(() => alert("Erro ao editar. Verifique suas permissões."));
+}
+
+function deletarPneu(pneuId, fuego) {
+    if (confirm(`Tem certeza que deseja excluir o pneu ${fuego}?`)) {
+        window.rtdb.ref(`pneus/${pneuId}`).remove()
+            .catch(() => alert("Erro ao excluir. Verifique suas permissões."));
+    }
+}
+
+// ----------------------------------------------------
+// 6. MODAIS DE CADASTRO E EDIÇÃO DE CARRETAS
+// ----------------------------------------------------
 function showAddCarretaModal() {
     openModal(`
         <div class="p-6">
@@ -444,7 +529,6 @@ function showAddCarretaModal() {
 
 function cadastrarCarreta(e) {
     e.preventDefault();
-
     const novaCarreta = {
         placa: document.getElementById('carreta-placa').value,
         modelo: document.getElementById('carreta-modelo').value,
@@ -454,7 +538,73 @@ function cadastrarCarreta(e) {
 
     window.rtdb.ref('carretas').push(novaCarreta)
         .then(() => closeModal())
-        .catch(err => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
+        .catch(() => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
+}
+
+function showEditCarretaModal(carretaId) {
+    const carreta = state.carretas.find(c => c.id === carretaId);
+    if (!carreta) return;
+
+    openModal(`
+        <div class="p-6">
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">EDITAR CARRETA ${carreta.placa}</h3>
+            <form onsubmit="salvarEdicaoCarreta(event, '${carreta.id}')" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">PLACA DA CARRETA</label>
+                    <input type="text" id="carreta-placa" value="${carreta.placa}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">MODELO</label>
+                    <input type="text" id="carreta-modelo" value="${carreta.modelo}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">QTD DE EIXOS</label>
+                        <select id="carreta-eixos" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs">
+                            <option value="2" ${carreta.eixos === 2 ? 'selected' : ''}>2 Eixos</option>
+                            <option value="3" ${carreta.eixos === 3 ? 'selected' : ''}>3 Eixos</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL</label>
+                        <input type="number" id="carreta-km" value="${carreta.kmAtual || 0}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-6">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue text-white text-xs font-bold font-heading">SALVAR ALTERAÇÕES</button>
+                </div>
+            </form>
+        </div>
+    `);
+}
+
+function salvarEdicaoCarreta(e, carretaId) {
+    e.preventDefault();
+    window.rtdb.ref(`carretas/${carretaId}`).update({
+        placa: document.getElementById('carreta-placa').value,
+        modelo: document.getElementById('carreta-modelo').value,
+        eixos: parseInt(document.getElementById('carreta-eixos').value),
+        kmAtual: parseInt(document.getElementById('carreta-km').value)
+    }).then(() => closeModal())
+      .catch(() => alert("Erro ao editar. Verifique suas permissões."));
+}
+
+function deletarCarreta(carretaId, placa) {
+    if (confirm(`Tem certeza que deseja excluir a carreta ${placa}?`)) {
+        window.rtdb.ref(`carretas/${carretaId}`).remove()
+            .then(() => {
+                // Ao excluir a carreta, move os pneus que estavam instalados de volta para o estoque
+                state.pneus.filter(p => p.carretaId === carretaId).forEach(pneu => {
+                    window.rtdb.ref(`pneus/${pneu.id}`).update({
+                        carretaId: null,
+                        posicao: null,
+                        status: 'Estoque'
+                    });
+                });
+            })
+            .catch(() => alert("Erro ao excluir. Verifique suas permissões."));
+    }
 }
 
 // Helpers Modal
