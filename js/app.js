@@ -1,11 +1,41 @@
 let currentPage = 'dashboard';
 let state = {
     pneus: [],
-    carretas: []
+    carretas: [],
+    searchTerm: ''
 };
 
-// Domínio padrão para conversão de usuário -> e-mail do Firebase
+let renderTimeout = null;
 const DEFAULT_DOMAIN = '@lprosp.com';
+
+// ----------------------------------------------------
+// SYSTEM TOASTS (Substitui o alert padrão)
+// ----------------------------------------------------
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    const bgColors = {
+        success: 'bg-emerald-600 text-white',
+        error: 'bg-lprosp-red text-white',
+        info: 'bg-slate-800 text-white'
+    };
+
+    toast.className = `pointer-events-auto px-4 py-3 rounded-xl shadow-lg text-xs font-bold font-heading flex items-center gap-2 transition-all duration-300 transform translate-y-2 opacity-0 ${bgColors[type] || bgColors.info}`;
+    toast.innerHTML = `<span>${message}</span>`;
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+    }, 10);
+
+    setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+    }, 3500);
+}
 
 // ----------------------------------------------------
 // GERENCIAMENTO DE AUTENTICAÇÃO
@@ -44,6 +74,7 @@ async function handleLogin(e) {
 
     try {
         await window.auth.signInWithEmailAndPassword(usuario, password);
+        showToast("Login efetuado com sucesso!", "success");
     } catch (error) {
         console.error("Erro no login:", error);
         errorDiv.innerText = "Usuário ou senha inválidos. Verifique suas credenciais.";
@@ -56,20 +87,25 @@ function handleLogout() {
 }
 
 // ----------------------------------------------------
-// SINCRONIZAÇÃO EM TEMPO REAL (FIREBASE)
+// SINCRONIZAÇÃO EM TEMPO REAL COM DEBOUNCE
 // ----------------------------------------------------
 function initRealtimeSync() {
     window.rtdb.ref('pneus').on('value', (snapshot) => {
         const data = snapshot.val();
         state.pneus = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-        renderPage();
+        debouncedRender();
     });
 
     window.rtdb.ref('carretas').on('value', (snapshot) => {
         const data = snapshot.val();
         state.carretas = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-        renderPage();
+        debouncedRender();
     });
+}
+
+function debouncedRender() {
+    clearTimeout(renderTimeout);
+    renderTimeout = setTimeout(renderPage, 100);
 }
 
 // ----------------------------------------------------
@@ -77,6 +113,8 @@ function initRealtimeSync() {
 // ----------------------------------------------------
 function navigate(page) {
     currentPage = page;
+    state.searchTerm = ''; // Limpa a busca ao trocar de página
+
     document.querySelectorAll('#sidebar-nav button').forEach(btn => {
         btn.className = "px-6 py-2.5 rounded-xl text-sm font-bold font-heading transition bg-white text-slate-600 hover:bg-slate-100 border border-slate-200";
     });
@@ -135,7 +173,7 @@ function renderDashboard(container) {
                     ${criticos.map(p => `
                         <div class="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
                             <div>
-                                <span class="font-bold text-slate-800">${p.fuego}</span> - <span class="text-slate-600 text-sm">${p.marca} (${p.medida})</span>
+                                <span class="font-bold text-slate-800">${escapeHtml(p.fuego)}</span> - <span class="text-slate-600 text-sm">${escapeHtml(p.marca)} (${escapeHtml(p.medida)})</span>
                                 <p class="text-xs text-slate-500 mt-0.5">Sulco Atual: <b class="text-lprosp-red">${p.sulcoAtual} mm</b></p>
                             </div>
                             <span class="px-3 py-1 rounded-lg text-xs font-bold font-heading bg-lprosp-red text-white uppercase">Atenção Imediata</span>
@@ -148,91 +186,116 @@ function renderDashboard(container) {
 }
 
 // ----------------------------------------------------
-// 2. CARRETAS / PÁTIO (COM EDITAR E EXCLUIR)
+// 2. CARRETAS / PÁTIO (COM SUPORTE A CAVALO ENGATADO)
 // ----------------------------------------------------
 function renderCarretasView(container) {
-    if (state.carretas.length === 0) {
-        container.innerHTML = `
-            <div class="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400">
-                <i class="fas fa-truck-front text-4xl mb-3 text-slate-300"></i>
-                <p class="font-bold font-heading text-slate-600">NENHUMA CARRETA CADASTRADA</p>
-                <p class="text-xs text-slate-400 mt-1">Clique em "+ NOVA CARRETA" para cadastrar sua frota.</p>
-            </div>
-        `;
-        return;
-    }
+    const carretasFiltradas = state.carretas.filter(c => 
+        c.placa.toLowerCase().includes(state.searchTerm.toLowerCase()) ||
+        c.modelo.toLowerCase().includes(state.searchTerm.toLowerCase()) ||
+        (c.cavaloEngatado && c.cavaloEngatado.toLowerCase().includes(state.searchTerm.toLowerCase()))
+    );
 
     container.innerHTML = `
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            ${state.carretas.map(carreta => {
-                const pneusDaCarreta = state.pneus.filter(p => p.carretaId === carreta.id);
-                return `
-                    <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                        <div class="flex justify-between items-start mb-4 border-b border-slate-100 pb-3">
-                            <div>
-                                <h3 class="text-xl font-bold text-slate-800 font-heading">${carreta.placa}</h3>
-                                <p class="text-xs text-slate-500">${carreta.modelo} • ${carreta.kmAtual?.toLocaleString() || 0} KM</p>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <span class="bg-lprosp-blue-light text-lprosp-blue border border-lprosp-blue/20 text-xs px-2.5 py-1 rounded-lg font-bold font-heading">
-                                    ${carreta.eixos} EIXOS
-                                </span>
-                                <!-- Botão Editar Carreta -->
-                                <button onclick="showEditCarretaModal('${carreta.id}')" title="Editar Carreta" class="text-slate-400 hover:text-lprosp-blue p-1 transition">
-                                    <i class="fas fa-pen-to-square text-sm"></i>
-                                </button>
-                                <!-- Botão Excluir Carreta -->
-                                <button onclick="deletarCarreta('${carreta.id}', '${carreta.placa}')" title="Excluir Carreta" class="text-slate-400 hover:text-lprosp-red p-1 transition">
-                                    <i class="fas fa-trash-can text-sm"></i>
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 my-2 flex flex-col items-center gap-4">
-                            <div class="text-[10px] text-slate-400 font-bold font-heading uppercase">Frente da Carreta</div>
-                            
-                            ${[1, 2, 3].slice(0, carreta.eixos).map(eixo => {
-                                const posEsquerda = `E${eixo}E`;
-                                const posDireita = `E${eixo}D`;
-                                const pneuE = pneusDaCarreta.find(p => p.posicao === posEsquerda);
-                                const pneuD = pneusDaCarreta.find(p => p.posicao === posDireita);
-
-                                return `
-                                    <div class="flex items-center justify-center gap-6 w-full">
-                                        <button onclick="handleSlotClick('${carreta.id}', '${posEsquerda}')" 
-                                            class="w-28 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold shadow-sm
-                                            ${pneuE ? (pneuE.sulcoAtual <= 3 ? 'bg-red-50 border-lprosp-red text-lprosp-red' : 'bg-blue-50 border-lprosp-blue text-lprosp-blue') : 'bg-white border-dashed border-slate-300 text-slate-400 hover:border-slate-400'}">
-                                            <span class="font-bold">${pneuE ? pneuE.fuego : '+ Montar'}</span>
-                                            <span class="text-[10px] opacity-75">${pneuE ? `${pneuE.sulcoAtual}mm` : posEsquerda}</span>
-                                        </button>
-
-                                        <div class="h-2 flex-1 bg-slate-300 rounded-full"></div>
-
-                                        <button onclick="handleSlotClick('${carreta.id}', '${posDireita}')" 
-                                            class="w-28 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold shadow-sm
-                                            ${pneuD ? (pneuD.sulcoAtual <= 3 ? 'bg-red-50 border-lprosp-red text-lprosp-red' : 'bg-blue-50 border-lprosp-blue text-lprosp-blue') : 'bg-white border-dashed border-slate-300 text-slate-400 hover:border-slate-400'}">
-                                            <span class="font-bold">${pneuD ? pneuD.fuego : '+ Montar'}</span>
-                                            <span class="text-[10px] opacity-75">${pneuD ? `${pneuD.sulcoAtual}mm` : posDireita}</span>
-                                        </button>
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
-                    </div>
-                `;
-            }).join('')}
+        <div class="mb-6 flex justify-between items-center gap-4">
+            <div class="relative flex-1 max-w-md">
+                <i class="fas fa-search absolute left-3.5 top-3 text-slate-400 text-xs"></i>
+                <input type="text" placeholder="Buscar por placa da carreta ou cavalo..." value="${escapeHtml(state.searchTerm)}" 
+                    oninput="state.searchTerm = this.value; renderPage()" 
+                    class="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:border-lprosp-blue shadow-sm">
+            </div>
         </div>
+
+        ${carretasFiltradas.length === 0 ? `
+            <div class="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400">
+                <i class="fas fa-truck-front text-4xl mb-3 text-slate-300"></i>
+                <p class="font-bold font-heading text-slate-600">NENHUMA CARRETA ENCONTRADA</p>
+            </div>
+        ` : `
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                ${carretasFiltradas.map(carreta => {
+                    const pneusDaCarreta = state.pneus.filter(p => p.carretaId === carreta.id);
+                    return `
+                        <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                            <div class="flex justify-between items-start mb-4 border-b border-slate-100 pb-3">
+                                <div>
+                                    <h3 class="text-xl font-bold text-slate-800 font-heading">${escapeHtml(carreta.placa)}</h3>
+                                    <p class="text-xs text-slate-500">${escapeHtml(carreta.modelo)} • ${carreta.kmAtual?.toLocaleString() || 0} KM</p>
+                                    ${carreta.cavaloEngatado ? `<span class="inline-block mt-1 text-[11px] font-bold text-lprosp-blue bg-blue-50 px-2 py-0.5 rounded border border-blue-100"><i class="fas fa-truck"></i> Cavalo: ${escapeHtml(carreta.cavaloEngatado)}</span>` : '<span class="inline-block mt-1 text-[10px] text-slate-400 italic">Nenhum cavalo engatado</span>'}
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="bg-lprosp-blue-light text-lprosp-blue border border-lprosp-blue/20 text-xs px-2.5 py-1 rounded-lg font-bold font-heading">
+                                        ${carreta.eixos} EIXOS
+                                    </span>
+                                    <button onclick="showEditCarretaModal('${carreta.id}')" title="Editar" class="text-slate-400 hover:text-lprosp-blue p-1 transition">
+                                        <i class="fas fa-pen-to-square text-sm"></i>
+                                    </button>
+                                    <button onclick="deletarCarreta('${carreta.id}', '${carreta.placa}')" title="Excluir" class="text-slate-400 hover:text-lprosp-red p-1 transition">
+                                        <i class="fas fa-trash-can text-sm"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 my-2 flex flex-col items-center gap-4">
+                                <div class="text-[10px] text-slate-400 font-bold font-heading uppercase">Frente da Carreta</div>
+                                
+                                ${Array.from({ length: carreta.eixos }, (_, index) => index + 1).map(eixo => {
+                                    const posEsquerda = `E${eixo}E`;
+                                    const posDireita = `E${eixo}D`;
+                                    const pneuE = pneusDaCarreta.find(p => p.posicao === posEsquerda);
+                                    const pneuD = pneusDaCarreta.find(p => p.posicao === posDireita);
+
+                                    return `
+                                        <div class="flex items-center justify-center gap-6 w-full">
+                                            <button onclick="handleSlotClick('${carreta.id}', '${posEsquerda}')" 
+                                                class="w-28 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold shadow-sm
+                                                ${pneuE ? (pneuE.sulcoAtual <= 3 ? 'bg-red-50 border-lprosp-red text-lprosp-red' : 'bg-blue-50 border-lprosp-blue text-lprosp-blue') : 'bg-white border-dashed border-slate-300 text-slate-400 hover:border-slate-400'}">
+                                                <span class="font-bold">${pneuE ? escapeHtml(pneuE.fuego) : '+ Montar'}</span>
+                                                <span class="text-[10px] opacity-75">${pneuE ? `${pneuE.sulcoAtual}mm` : posEsquerda}</span>
+                                            </button>
+
+                                            <div class="h-2 flex-1 bg-slate-300 rounded-full"></div>
+
+                                            <button onclick="handleSlotClick('${carreta.id}', '${posDireita}')" 
+                                                class="w-28 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold shadow-sm
+                                                ${pneuD ? (pneuD.sulcoAtual <= 3 ? 'bg-red-50 border-lprosp-red text-lprosp-red' : 'bg-blue-50 border-lprosp-blue text-lprosp-blue') : 'bg-white border-dashed border-slate-300 text-slate-400 hover:border-slate-400'}">
+                                                <span class="font-bold">${pneuD ? escapeHtml(pneuD.fuego) : '+ Montar'}</span>
+                                                <span class="text-[10px] opacity-75">${pneuD ? `${pneuD.sulcoAtual}mm` : posDireita}</span>
+                                            </button>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `}
     `;
 }
 
 // ----------------------------------------------------
-// 3. ESTOQUE DE PNEUS (COM EDITAR E EXCLUIR)
+// 3. ESTOQUE DE PNEUS (COM BUSCA EM TEMPO REAL)
 // ----------------------------------------------------
 function renderPneusView(container) {
+    const pneusFiltrados = state.pneus.filter(p => 
+        p.fuego.toLowerCase().includes(state.searchTerm.toLowerCase()) ||
+        p.marca.toLowerCase().includes(state.searchTerm.toLowerCase()) ||
+        p.status.toLowerCase().includes(state.searchTerm.toLowerCase())
+    );
+
     container.innerHTML = `
         <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">TODOS OS PNEUS</h3>
-            ${state.pneus.length === 0 ? '<p class="text-slate-400 text-xs italic">Nenhum pneu cadastrado.</p>' : `
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+                <h3 class="text-lg font-bold font-heading text-slate-800">TODOS OS PNEUS (${pneusFiltrados.length})</h3>
+                <div class="relative w-full md:w-72">
+                    <i class="fas fa-search absolute left-3.5 top-3 text-slate-400 text-xs"></i>
+                    <input type="text" placeholder="Buscar por Fogo, Marca ou Status..." value="${escapeHtml(state.searchTerm)}" 
+                        oninput="state.searchTerm = this.value; renderPage()" 
+                        class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:border-lprosp-blue">
+                </div>
+            </div>
+
+            ${pneusFiltrados.length === 0 ? '<p class="text-slate-400 text-xs italic text-center py-8">Nenhum pneu encontrado.</p>' : `
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-xs text-slate-600">
                         <thead class="bg-slate-50 text-slate-500 font-heading border-b border-slate-200">
@@ -246,22 +309,20 @@ function renderPneusView(container) {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
-                            ${state.pneus.map(p => {
+                            ${pneusFiltrados.map(p => {
                                 const carreta = state.carretas.find(c => c.id === p.carretaId);
                                 return `
                                     <tr>
-                                        <td class="p-3 font-bold text-slate-800">${p.fuego}</td>
-                                        <td class="p-3">${p.marca} (${p.medida})</td>
+                                        <td class="p-3 font-bold text-slate-800">${escapeHtml(p.fuego)}</td>
+                                        <td class="p-3">${escapeHtml(p.marca)} (${escapeHtml(p.medida)})</td>
                                         <td class="p-3 font-bold ${p.sulcoAtual <= 3 ? 'text-lprosp-red' : 'text-slate-800'}">${p.sulcoAtual} mm</td>
-                                        <td class="p-3"><span class="px-2 py-1 rounded text-[10px] font-bold ${p.status === 'Em Uso' ? 'bg-blue-100 text-lprosp-blue' : 'bg-emerald-100 text-lprosp-green'}">${p.status}</span></td>
-                                        <td class="p-3 text-slate-500">${carreta ? `${carreta.placa} (${p.posicao})` : 'Estoque Central'}</td>
+                                        <td class="p-3"><span class="px-2 py-1 rounded text-[10px] font-bold ${p.status === 'Em Uso' ? 'bg-blue-100 text-lprosp-blue' : 'bg-emerald-100 text-lprosp-green'}">${escapeHtml(p.status)}</span></td>
+                                        <td class="p-3 text-slate-500">${carreta ? `${escapeHtml(carreta.placa)} (${escapeHtml(p.posicao)})` : 'Estoque Central'}</td>
                                         <td class="p-3 text-right flex justify-end gap-2">
-                                            <!-- Botão Editar Pneu -->
-                                            <button onclick="showEditTireModal('${p.id}')" title="Editar Pneu" class="text-slate-400 hover:text-lprosp-blue p-1 transition">
+                                            <button onclick="showEditTireModal('${p.id}')" title="Editar" class="text-slate-400 hover:text-lprosp-blue p-1 transition">
                                                 <i class="fas fa-pen-to-square text-sm"></i>
                                             </button>
-                                            <!-- Botão Excluir Pneu -->
-                                            <button onclick="deletarPneu('${p.id}', '${p.fuego}')" title="Excluir Pneu" class="text-slate-400 hover:text-lprosp-red p-1 transition">
+                                            <button onclick="deletarPneu('${p.id}', '${p.fuego}')" title="Excluir" class="text-slate-400 hover:text-lprosp-red p-1 transition">
                                                 <i class="fas fa-trash-can text-sm"></i>
                                             </button>
                                         </td>
@@ -301,7 +362,7 @@ function showMontarModal(carretaId, posicao) {
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">SELECIONE O PNEU</label>
                         <select id="montar-pneu-id" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800" required>
-                            ${pneusDisponiveis.map(p => `<option value="${p.id}">${p.fuego} - ${p.marca} (${p.sulcoAtual}mm)</option>`).join('')}
+                            ${pneusDisponiveis.map(p => `<option value="${p.id}">${escapeHtml(p.fuego)} - ${escapeHtml(p.marca)} (${p.sulcoAtual}mm)</option>`).join('')}
                         </select>
                     </div>
                     <div class="flex justify-end gap-2 mt-6">
@@ -322,14 +383,16 @@ function confirmarMontagem(e, carretaId, posicao) {
         status: 'Em Uso',
         carretaId: carretaId,
         posicao: posicao
-    }).then(() => closeModal())
-      .catch(() => alert("Erro ao salvar. Verifique suas permissões."));
+    }).then(() => {
+        closeModal();
+        showToast("Pneu montado com sucesso!", "success");
+    }).catch(() => showToast("Erro ao instalar pneu.", "error"));
 }
 
 function showDesmontarModal(pneu) {
     openModal(`
         <div class="p-6">
-            <h3 class="text-lg font-bold font-heading text-slate-800 mb-1">Desmontar Pneu ${pneu.fuego}</h3>
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-1">Desmontar Pneu ${escapeHtml(pneu.fuego)}</h3>
             <p class="text-xs text-slate-500 mb-4">Informe o sulco medido e o destino do pneu.</p>
 
             <form onsubmit="confirmarDesmontagem(event, '${pneu.id}')" class="space-y-4">
@@ -364,12 +427,14 @@ function confirmarDesmontagem(e, pneuId) {
         status: destino,
         carretaId: null,
         posicao: null
-    }).then(() => closeModal())
-      .catch(() => alert("Erro ao salvar. Verifique suas permissões."));
+    }).then(() => {
+        closeModal();
+        showToast("Pneu desmontado com sucesso!", "success");
+    }).catch(() => showToast("Erro ao desmontar pneu.", "error"));
 }
 
 // ----------------------------------------------------
-// 5. MODAIS DE CADASTRO E EDIÇÃO DE PNEUS (SUPORTE A LOTE)
+// 5. MODAIS DE CADASTRO E EDIÇÃO DE PNEUS (COM VALIDAÇÃO DE DUPLICIDADE)
 // ----------------------------------------------------
 function showAddTireModal() {
     openModal(`
@@ -379,7 +444,7 @@ function showAddTireModal() {
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE FOGO (Separe por vírgula)</label>
-                        <input type="text" id="pneu-fuego" placeholder="Ex: 101,102,103,104,105" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                        <input type="text" id="pneu-fuego" placeholder="Ex: 101,102,103,104" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">MARCA</label>
@@ -418,19 +483,29 @@ function cadastrarPneu(e) {
     const sulcoAtual = parseFloat(document.getElementById('pneu-sulco').value);
     const valor = parseFloat(document.getElementById('pneu-valor').value);
 
-    // Separa os fogos por vírgula e limpa espaços extras
+    // Separa os números de fogo digitados
     const listaFuegos = inputFuego.split(',')
                                   .map(f => f.trim())
                                   .filter(f => f.length > 0);
 
     if (listaFuegos.length === 0) {
-        alert("Informe pelo menos um número de fogo válido.");
+        showToast("Informe pelo menos um número de fogo.", "error");
         return;
     }
 
-    // Cria as promessas do Firebase para salvar cada pneu
-    const promises = listaFuegos.map(fuego => {
-        const novoPneu = {
+    // VALIDAÇÃO DE FOGO DUPLICADO: Verifica se algum já existe no banco
+    const fogosExistentes = state.pneus.map(p => p.fuego.toLowerCase());
+    const duplicados = listaFuegos.filter(f => fogosExistentes.includes(f.toLowerCase()));
+
+    if (duplicados.length > 0) {
+        showToast(`Fogo(s) já existente(s): ${duplicados.join(', ')}`, "error");
+        return;
+    }
+
+    const updates = {};
+    listaFuegos.forEach(fuego => {
+        const newKey = window.rtdb.ref().child('pneus').push().key;
+        updates[`pneus/${newKey}`] = {
             fuego: fuego,
             marca: marca,
             medida: medida,
@@ -442,36 +517,40 @@ function cadastrarPneu(e) {
             posicao: null,
             kmRodados: 0
         };
-        return window.rtdb.ref('pneus').push(novoPneu);
     });
 
-    Promise.all(promises)
-        .then(() => closeModal())
-        .catch(() => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
+    window.rtdb.ref().update(updates)
+        .then(() => {
+            closeModal();
+            showToast(`${listaFuegos.length} pneu(s) cadastrado(s) com sucesso!`, "success");
+        })
+        .catch(() => showToast("Erro ao cadastrar pneus.", "error"));
 }
 
 function showEditTireModal(pneuId) {
     const pneu = state.pneus.find(p => p.id === pneuId);
     if (!pneu) return;
 
+    const isEmUso = pneu.status === 'Em Uso';
+
     openModal(`
         <div class="p-6">
-            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">EDITAR PNEU ${pneu.fuego}</h3>
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">EDITAR PNEU ${escapeHtml(pneu.fuego)}</h3>
             <form onsubmit="salvarEdicaoPneu(event, '${pneu.id}')" class="space-y-4">
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE FOGO</label>
-                        <input type="text" id="pneu-fuego" value="${pneu.fuego}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE FOGO ${isEmUso ? '(Bloqueado - Em Uso)' : ''}</label>
+                        <input type="text" id="pneu-fuego" value="${escapeHtml(pneu.fuego)}" ${isEmUso ? 'disabled' : ''} class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs disabled:opacity-50" required>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">MARCA</label>
-                        <input type="text" id="pneu-marca" value="${pneu.marca}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                        <input type="text" id="pneu-marca" value="${escapeHtml(pneu.marca)}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">MEDIDA</label>
-                        <input type="text" id="pneu-medida" value="${pneu.medida}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                        <input type="text" id="pneu-medida" value="${escapeHtml(pneu.medida)}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">SULCO ATUAL (MM)</label>
@@ -493,20 +572,32 @@ function showEditTireModal(pneuId) {
 
 function salvarEdicaoPneu(e, pneuId) {
     e.preventDefault();
+    const novoFuego = document.getElementById('pneu-fuego').value.trim();
+
+    // Valida se alterou o fuego para um que já existe
+    const pneuExistente = state.pneus.find(p => p.fuego.toLowerCase() === novoFuego.toLowerCase() && p.id !== pneuId);
+    if (pneuExistente) {
+        showToast(`O fogo ${novoFuego} já está cadastrado em outro pneu.`, "error");
+        return;
+    }
+
     window.rtdb.ref(`pneus/${pneuId}`).update({
-        fuego: document.getElementById('pneu-fuego').value,
+        fuego: novoFuego,
         marca: document.getElementById('pneu-marca').value,
         medida: document.getElementById('pneu-medida').value,
         sulcoAtual: parseFloat(document.getElementById('pneu-sulco').value),
         valor: parseFloat(document.getElementById('pneu-valor').value)
-    }).then(() => closeModal())
-      .catch(() => alert("Erro ao editar. Verifique suas permissões."));
+    }).then(() => {
+        closeModal();
+        showToast("Pneu atualizado com sucesso!", "success");
+    }).catch(() => showToast("Erro ao editar pneu.", "error"));
 }
 
 function deletarPneu(pneuId, fuego) {
     if (confirm(`Tem certeza que deseja excluir o pneu ${fuego}?`)) {
         window.rtdb.ref(`pneus/${pneuId}`).remove()
-            .catch(() => alert("Erro ao excluir. Verifique suas permissões."));
+            .then(() => showToast("Pneu excluído.", "success"))
+            .catch(() => showToast("Erro ao excluir pneu.", "error"));
     }
 }
 
@@ -518,9 +609,15 @@ function showAddCarretaModal() {
         <div class="p-6">
             <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">CADASTRAR NOVA CARRETA</h3>
             <form onsubmit="cadastrarCarreta(event)" class="space-y-4">
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">PLACA DA CARRETA</label>
-                    <input type="text" id="carreta-placa" placeholder="Ex: ABC-1234" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">PLACA DA CARRETA</label>
+                        <input type="text" id="carreta-placa" placeholder="Ex: ABC-1234" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">CAVALO ENGATADO (Opcional)</label>
+                        <input type="text" id="carreta-cavalo" placeholder="Ex: DEF-5678" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs">
+                    </div>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">MODELO</label>
@@ -529,10 +626,7 @@ function showAddCarretaModal() {
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">QTD DE EIXOS</label>
-                        <select id="carreta-eixos" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs">
-                            <option value="2">2 Eixos</option>
-                            <option value="3" selected>3 Eixos</option>
-                        </select>
+                        <input type="number" id="carreta-eixos" min="1" max="6" value="3" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL</label>
@@ -551,15 +645,19 @@ function showAddCarretaModal() {
 function cadastrarCarreta(e) {
     e.preventDefault();
     const novaCarreta = {
-        placa: document.getElementById('carreta-placa').value,
+        placa: document.getElementById('carreta-placa').value.toUpperCase().trim(),
+        cavaloEngatado: document.getElementById('carreta-cavalo').value.toUpperCase().trim() || null,
         modelo: document.getElementById('carreta-modelo').value,
         eixos: parseInt(document.getElementById('carreta-eixos').value),
         kmAtual: parseInt(document.getElementById('carreta-km').value)
     };
 
     window.rtdb.ref('carretas').push(novaCarreta)
-        .then(() => closeModal())
-        .catch(() => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
+        .then(() => {
+            closeModal();
+            showToast("Carreta cadastrada com sucesso!", "success");
+        })
+        .catch(() => showToast("Erro ao cadastrar carreta.", "error"));
 }
 
 function showEditCarretaModal(carretaId) {
@@ -568,23 +666,26 @@ function showEditCarretaModal(carretaId) {
 
     openModal(`
         <div class="p-6">
-            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">EDITAR CARRETA ${carreta.placa}</h3>
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">EDITAR CARRETA ${escapeHtml(carreta.placa)}</h3>
             <form onsubmit="salvarEdicaoCarreta(event, '${carreta.id}')" class="space-y-4">
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">PLACA DA CARRETA</label>
-                    <input type="text" id="carreta-placa" value="${carreta.placa}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">PLACA DA CARRETA</label>
+                        <input type="text" id="carreta-placa" value="${escapeHtml(carreta.placa)}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">CAVALO ENGATADO</label>
+                        <input type="text" id="carreta-cavalo" value="${escapeHtml(carreta.cavaloEngatado || '')}" placeholder="Ex: DEF-5678" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs">
+                    </div>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">MODELO</label>
-                    <input type="text" id="carreta-modelo" value="${carreta.modelo}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                    <input type="text" id="carreta-modelo" value="${escapeHtml(carreta.modelo)}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">QTD DE EIXOS</label>
-                        <select id="carreta-eixos" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs">
-                            <option value="2" ${carreta.eixos === 2 ? 'selected' : ''}>2 Eixos</option>
-                            <option value="3" ${carreta.eixos === 3 ? 'selected' : ''}>3 Eixos</option>
-                        </select>
+                        <input type="number" id="carreta-eixos" min="1" max="6" value="${carreta.eixos}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL</label>
@@ -603,31 +704,46 @@ function showEditCarretaModal(carretaId) {
 function salvarEdicaoCarreta(e, carretaId) {
     e.preventDefault();
     window.rtdb.ref(`carretas/${carretaId}`).update({
-        placa: document.getElementById('carreta-placa').value,
+        placa: document.getElementById('carreta-placa').value.toUpperCase().trim(),
+        cavaloEngatado: document.getElementById('carreta-cavalo').value.toUpperCase().trim() || null,
         modelo: document.getElementById('carreta-modelo').value,
         eixos: parseInt(document.getElementById('carreta-eixos').value),
         kmAtual: parseInt(document.getElementById('carreta-km').value)
-    }).then(() => closeModal())
-      .catch(() => alert("Erro ao editar. Verifique suas permissões."));
+    }).then(() => {
+        closeModal();
+        showToast("Carreta atualizada!", "success");
+    }).catch(() => showToast("Erro ao editar carreta.", "error"));
 }
 
-function deletarCarreta(carretaId, placa) {
-    if (confirm(`Tem certeza que deseja excluir a carreta ${placa}?`)) {
-        window.rtdb.ref(`carretas/${carretaId}`).remove()
-            .then(() => {
-                state.pneus.filter(p => p.carretaId === carretaId).forEach(pneu => {
-                    window.rtdb.ref(`pneus/${pneu.id}`).update({
-                        carretaId: null,
-                        posicao: null,
-                        status: 'Estoque'
-                    });
-                });
-            })
-            .catch(() => alert("Erro ao excluir. Verifique suas permissões."));
+// CORREÇÃO CRÍTICA DO BUG DE EXCLUSÃO (ATÔMICO):
+async function deletarCarreta(carretaId, placa) {
+    if (!confirm(`Tem certeza que deseja excluir a carreta ${placa}? Todos os pneus montados nela voltarão para o estoque.`)) return;
+
+    try {
+        const updates = {};
+        
+        // 1. Apaga a carreta
+        updates[`carretas/${carretaId}`] = null;
+
+        // 2. Desmonta todos os pneus vinculados a ela em uma única transação
+        const pneusDaCarreta = state.pneus.filter(p => p.carretaId === carretaId);
+        pneusDaCarreta.forEach(pneu => {
+            updates[`pneus/${pneu.id}/carretaId`] = null;
+            updates[`pneus/${pneu.id}/posicao`] = null;
+            updates[`pneus/${pneu.id}/status`] = 'Estoque';
+        });
+
+        await window.rtdb.ref().update(updates);
+        showToast("Carreta excluída e pneus retornados ao estoque.", "success");
+    } catch (e) {
+        console.error(e);
+        showToast("Erro ao excluir carreta.", "error");
     }
 }
 
-// Helpers Modal
+// ----------------------------------------------------
+// HELPERS E SANITIZAÇÃO
+// ----------------------------------------------------
 function openModal(content) {
     document.getElementById('modal-content').innerHTML = content;
     document.getElementById('modal').classList.remove('hidden');
@@ -635,4 +751,14 @@ function openModal(content) {
 
 function closeModal() {
     document.getElementById('modal').classList.add('hidden');
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
