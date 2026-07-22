@@ -77,19 +77,20 @@ function renderLoginView() {
     container.innerHTML = `
         <div class="max-w-md w-full mx-auto bg-white border border-slate-200 rounded-2xl p-8 shadow-xl my-10">
             <div class="text-center mb-8">
-                <div class="bg-blue-600 text-white w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
-                    <i class="fas fa-truck-moving text-2xl"></i>
+                <!-- LOGO DA EMPRESA -->
+                <div class="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 overflow-hidden bg-blue-600 text-white shadow-lg shadow-blue-500/30">
+                    <img src="logo.png" alt="L-Prosp Logística" class="w-full h-full object-cover" onerror="this.onerror=null; this.parentNode.innerHTML='<i class=\"fas fa-truck-moving text-2xl\"></i>';">
                 </div>
-                <h2 class="text-2xl font-black font-heading text-slate-800">LPROSP Logistics</h2>
+                <h2 class="text-2xl font-black font-heading text-slate-800 tracking-tight">L-Prosp Logística</h2>
                 <p class="text-xs text-slate-500 mt-1 font-medium">Painel de Gestão e Controle de Pneus</p>
             </div>
 
             <form onsubmit="handleLogin(event)" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">E-MAIL</label>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">USUÁRIO</label>
                     <div class="relative">
-                        <i class="fas fa-envelope absolute left-3 top-3 text-slate-400 text-xs"></i>
-                        <input type="email" id="login-email" placeholder="seu@lprosp.com" required 
+                        <i class="fas fa-user absolute left-3 top-3.5 text-slate-400 text-xs"></i>
+                        <input type="text" id="login-username" placeholder="lprosp" required 
                                class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-blue-600 transition">
                     </div>
                 </div>
@@ -97,7 +98,7 @@ function renderLoginView() {
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">SENHA</label>
                     <div class="relative">
-                        <i class="fas fa-lock absolute left-3 top-3 text-slate-400 text-xs"></i>
+                        <i class="fas fa-lock absolute left-3 top-3.5 text-slate-400 text-xs"></i>
                         <input type="password" id="login-password" placeholder="••••••••" required 
                                class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-blue-600 transition">
                     </div>
@@ -114,21 +115,26 @@ function renderLoginView() {
 
 function handleLogin(e) {
     e.preventDefault();
-    const email = document.getElementById('login-email').value;
+    let username = document.getElementById('login-username').value.trim();
     const password = document.getElementById('login-password').value;
     const btn = document.getElementById('btn-login');
+
+    // Se o usuário digitar sem @ (ex: 'lprosp'), converte para e-mail padrão do Firebase
+    if (!username.includes('@')) {
+        username = `${username}@lprosp.com`;
+    }
 
     btn.disabled = true;
     btn.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> Autenticando...`;
 
-    window.auth.signInWithEmailAndPassword(email, password)
+    window.auth.signInWithEmailAndPassword(username, password)
         .then(() => {
             showToast("Acesso concedido com sucesso!", "success");
         })
         .catch(error => {
             btn.disabled = false;
             btn.innerHTML = `<span>ENTRAR NO SISTEMA</span> <i class="fas fa-arrow-right"></i>`;
-            showToast("Falha no login: " + error.message, "error");
+            showToast("Usuário ou senha incorretos.", "error");
         });
 }
 
