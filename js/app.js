@@ -5,26 +5,62 @@ let state = {
 };
 
 // ----------------------------------------------------
-// SINCRONIZAÇÃO EM TEMPO REAL
+// GERENCIAMENTO DE AUTENTICAÇÃO
 // ----------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
-    initRealtimeSync();
+    // Monitora o estado da autenticação
+    window.auth.onAuthStateChanged((user) => {
+        const loginScreen = document.getElementById('login-screen');
+        const appScreen = document.getElementById('app-screen');
+
+        if (user) {
+            // Usuário logado
+            loginScreen.classList.add('hidden');
+            appScreen.classList.remove('hidden');
+            document.getElementById('user-display-email').innerText = `L-PROSP • ${user.email}`;
+            initRealtimeSync();
+        } else {
+            // Usuário deslogado
+            loginScreen.classList.remove('hidden');
+            appScreen.classList.add('hidden');
+        }
+    });
 });
 
+async function handleLogin(e) {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    const errorDiv = document.getElementById('login-error');
+
+    errorDiv.classList.add('hidden');
+
+    try {
+        await window.auth.signInWithEmailAndPassword(email, password);
+    } catch (error) {
+        errorDiv.innerText = "Falha ao entrar. Verifique o e-mail e a senha digitados.";
+        errorDiv.classList.remove('hidden');
+    }
+}
+
+function handleLogout() {
+    window.auth.signOut();
+}
+
+// ----------------------------------------------------
+// SINCRONIZAÇÃO EM TEMPO REAL
+// ----------------------------------------------------
 function initRealtimeSync() {
-    // Escuta Pneus
     window.rtdb.ref('pneus').on('value', (snapshot) => {
         const data = snapshot.val();
         state.pneus = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
         renderPage();
     });
 
-    // Escuta Carretas
     window.rtdb.ref('carretas').on('value', (snapshot) => {
         const data = snapshot.val();
         state.carretas = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
 
-        // Adiciona carretas de demonstração na primeira execução
         if (state.carretas.length === 0 && !data) {
             seedInitialData();
         } else {
