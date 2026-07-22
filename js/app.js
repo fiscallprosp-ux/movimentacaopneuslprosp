@@ -15,11 +15,13 @@ if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 window.rtdb = firebase.database();
+window.auth = firebase.auth();
 
 // ====================================================
 // ESTADO GLOBAL DA APLICAÇÃO
 // ====================================================
 const state = {
+    user: null,
     carretas: [],
     pneus: [],
     currentTab: 'carretas',
@@ -27,18 +29,33 @@ const state = {
 };
 
 // ====================================================
-// INICIALIZAÇÃO E LISTENERS EM TEMPO REAL
+// INICIALIZAÇÃO E MONITORAMENTO DE AUTENTICAÇÃO
 // ====================================================
 document.addEventListener('DOMContentLoaded', () => {
-    initRealtimeListeners();
+    window.auth.onAuthStateChanged(user => {
+        if (user) {
+            state.user = user;
+            document.getElementById('app-header').classList.remove('hidden');
+            document.getElementById('app-subheader').classList.remove('hidden');
+            initRealtimeListeners();
+        } else {
+            state.user = null;
+            document.getElementById('app-header').classList.add('hidden');
+            document.getElementById('app-subheader').classList.add('hidden');
+            renderLoginView();
+        }
+    });
 });
 
+// Listener do Realtime Database (Disparado somente após autenticado)
 function initRealtimeListeners() {
     // Listener de Carretas
     window.rtdb.ref('carretas').on('value', snapshot => {
         const data = snapshot.val() || {};
         state.carretas = Object.keys(data).map(key => ({ id: key, ...data[key] }));
         renderApp();
+    }, error => {
+        showToast("Erro de permissão no banco: " + error.message, "error");
     });
 
     // Listener de Pneus
@@ -47,10 +64,83 @@ function initRealtimeListeners() {
         state.pneus = Object.keys(data).map(key => ({ id: key, ...data[key] }));
         updateQuickStats();
         renderApp();
+    }, error => {
+        showToast("Erro de permissão no banco: " + error.message, "error");
     });
 }
 
-// Atualiza contadores no sub-header
+// ====================================================
+// FLUXO DE AUTENTICAÇÃO (LOGIN / LOGOUT)
+// ====================================================
+function renderLoginView() {
+    const container = document.getElementById('main-container');
+    container.innerHTML = `
+        <div class="max-w-md w-full mx-auto bg-white border border-slate-200 rounded-2xl p-8 shadow-xl my-10">
+            <div class="text-center mb-8">
+                <div class="bg-blue-600 text-white w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
+                    <i class="fas fa-truck-moving text-2xl"></i>
+                </div>
+                <h2 class="text-2xl font-black font-heading text-slate-800">LPROSP Logistics</h2>
+                <p class="text-xs text-slate-500 mt-1 font-medium">Painel de Gestão e Controle de Pneus</p>
+            </div>
+
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">E-MAIL</label>
+                    <div class="relative">
+                        <i class="fas fa-envelope absolute left-3 top-3 text-slate-400 text-xs"></i>
+                        <input type="email" id="login-email" placeholder="seu@lprosp.com" required 
+                               class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-blue-600 transition">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">SENHA</label>
+                    <div class="relative">
+                        <i class="fas fa-lock absolute left-3 top-3 text-slate-400 text-xs"></i>
+                        <input type="password" id="login-password" placeholder="••••••••" required 
+                               class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-blue-600 transition">
+                    </div>
+                </div>
+
+                <button type="submit" id="btn-login" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-xs font-bold font-heading shadow-md transition flex items-center justify-center gap-2 mt-2">
+                    <span>ENTRAR NO SISTEMA</span>
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </form>
+        </div>
+    `;
+}
+
+function handleLogin(e) {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    const btn = document.getElementById('btn-login');
+
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> Autenticando...`;
+
+    window.auth.signInWithEmailAndPassword(email, password)
+        .then(() => {
+            showToast("Acesso concedido com sucesso!", "success");
+        })
+        .catch(error => {
+            btn.disabled = false;
+            btn.innerHTML = `<span>ENTRAR NO SISTEMA</span> <i class="fas fa-arrow-right"></i>`;
+            showToast("Falha no login: " + error.message, "error");
+        });
+}
+
+function handleLogout() {
+    window.auth.signOut().then(() => {
+        showToast("Sessão encerrada.", "info");
+    });
+}
+
+// ====================================================
+// NAVEGAÇÃO E REGRAS DE INTERFACE
+// ====================================================
 function updateQuickStats() {
     const emUso = state.pneus.filter(p => p.status === 'Em Uso').length;
     const estoque = state.pneus.filter(p => p.status === 'Estoque').length;
@@ -61,11 +151,9 @@ function updateQuickStats() {
     document.getElementById('stat-reforma').innerText = reforma;
 }
 
-// Troca de Abas
 function switchTab(tab) {
     state.currentTab = tab;
     
-    // Atualiza botões
     const btnCarretas = document.getElementById('tab-carretas');
     const btnPneus = document.getElementById('tab-pneus');
 
@@ -86,6 +174,8 @@ function handleSearch(term) {
 }
 
 function renderApp() {
+    if (!state.user) return;
+    
     const container = document.getElementById('main-container');
     if (!container) return;
 
@@ -250,7 +340,7 @@ function renderCarretasView(container) {
 }
 
 // ====================================================
-// FUNÇÕES DE DRAG & DROP
+// LÓGICA DE DRAG & DROP
 // ====================================================
 function handleDragStart(e, pneuId, sourceType) {
     e.dataTransfer.setData('text/plain', JSON.stringify({ pneuId, sourceType }));
@@ -267,7 +357,6 @@ function handleDragLeave(e) {
     e.currentTarget.classList.remove('drop-zone-active', 'drag-over');
 }
 
-// Montar Pneu na Carreta
 function handleDropToSlot(e, carretaId, posicao) {
     e.preventDefault();
     e.currentTarget.classList.remove('drop-zone-active', 'drag-over');
@@ -282,10 +371,9 @@ function handleDropToSlot(e, carretaId, posicao) {
         carretaId: carretaId,
         posicao: posicao
     }).then(() => showToast(`Pneu instalado na posição ${posicao}!`, "success"))
-      .catch(() => showToast("Erro ao mover pneu.", "error"));
+      .catch((err) => showToast("Erro de gravação: Sem permissão (" + err.message + ")", "error"));
 }
 
-// Desmontar / Mover Pneu para Zonas de Ação
 function handleDropToZone(e, destinoStatus) {
     e.preventDefault();
     e.currentTarget.classList.remove('drop-zone-active', 'drag-over');
@@ -301,7 +389,6 @@ function handleDropToZone(e, destinoStatus) {
     }
 }
 
-// Modal de Desmontagem com Sulco
 function showDesmontarModalComDestino(pneu, destino) {
     openModal(`
         <div class="p-6">
@@ -334,7 +421,7 @@ function confirmarMovimentacaoDrag(e, pneuId, destino) {
     }).then(() => {
         closeModal();
         showToast(`Pneu movido para ${destino}!`, "success");
-    }).catch(() => showToast("Erro ao movimentar pneu.", "error"));
+    }).catch((err) => showToast("Erro: " + err.message, "error"));
 }
 
 function filterEstoqueVisual(term) {
@@ -422,8 +509,6 @@ function renderPneusView(container) {
 // ====================================================
 // MODAIS DE CADASTRO E EDIÇÃO
 // ====================================================
-
-// Modal para Cadastrar Pneu (Unidade ou Lote)
 function showAddPneuModal() {
     openModal(`
         <div class="p-6">
@@ -487,10 +572,9 @@ function salvarPneusEmLote(e) {
     window.rtdb.ref().update(updates).then(() => {
         closeModal();
         showToast(`${fuegos.length} pneu(s) cadastrado(s) no estoque!`, "success");
-    }).catch(() => showToast("Erro ao salvar pneus.", "error"));
+    }).catch((err) => showToast("Sem permissão para criar registros: " + err.message, "error"));
 }
 
-// Modal para Cadastrar Carreta
 function showAddCarretaModal() {
     openModal(`
         <div class="p-6">
@@ -543,14 +627,14 @@ function salvarCarreta(e) {
     }).then(() => {
         closeModal();
         showToast("Carreta adicionada com sucesso!", "success");
-    }).catch(() => showToast("Erro ao cadastrar carreta.", "error"));
+    }).catch((err) => showToast("Erro: " + err.message, "error"));
 }
 
 function deletarCarreta(id, placa) {
     if (confirm(`Tem certeza que deseja excluir a carreta ${placa}?`)) {
         window.rtdb.ref(`carretas/${id}`).remove()
             .then(() => showToast("Carreta removida!", "success"))
-            .catch(() => showToast("Erro ao remover carreta.", "error"));
+            .catch((err) => showToast("Erro de permissão: " + err.message, "error"));
     }
 }
 
@@ -558,7 +642,7 @@ function deletarPneu(id, fuego) {
     if (confirm(`Tem certeza que deseja excluir o pneu nº ${fuego}?`)) {
         window.rtdb.ref(`pneus/${id}`).remove()
             .then(() => showToast("Pneu removido!", "success"))
-            .catch(() => showToast("Erro ao remover pneu.", "error"));
+            .catch((err) => showToast("Erro de permissão: " + err.message, "error"));
     }
 }
 
