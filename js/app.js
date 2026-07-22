@@ -4,13 +4,13 @@ let currentPage = 'dashboard';
 function navigate(page) {
     currentPage = page;
     document.querySelectorAll('#sidebar-nav button').forEach(btn => {
-        btn.classList.remove('bg-orange-600/10', 'text-orange-500', 'font-semibold');
+        btn.classList.remove('bg-lprosp-blue/10', 'text-lprosp-blue', 'font-semibold');
         btn.classList.add('text-zinc-400');
     });
 
     const activeBtn = document.getElementById(`nav-${page}`);
     if (activeBtn) {
-        activeBtn.classList.add('bg-orange-600/10', 'text-orange-500', 'font-semibold');
+        activeBtn.classList.add('bg-lprosp-blue/10', 'text-lprosp-blue', 'font-semibold');
     }
 
     const titleMap = {
@@ -18,7 +18,7 @@ function navigate(page) {
         'carretas': 'Gestão de Carretas & Pátio',
         'pneus': 'Estoque & Saúde dos Pneus'
     };
-    document.getElementById('page-title').innerText = titleMap[page] || 'PneuControl';
+    document.getElementById('page-title').innerText = titleMap[page] || 'L-PROSP';
 
     renderPage();
 }
@@ -49,29 +49,31 @@ function renderDashboard(container) {
             </div>
             <div class="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl">
                 <p class="text-zinc-400 text-sm">Pneus Em Uso</p>
-                <h3 class="text-3xl font-bold text-orange-500 mt-2">${emUso}</h3>
+                <h3 class="text-3xl font-bold text-lprosp-blue mt-2">${emUso}</h3>
             </div>
             <div class="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl">
                 <p class="text-zinc-400 text-sm">Pneus no Estoque</p>
-                <h3 class="text-3xl font-bold text-emerald-500 mt-2">${emEstoque}</h3>
+                <h3 class="text-3xl font-bold text-lprosp-green mt-2">${emEstoque}</h3>
             </div>
             <div class="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl">
                 <p class="text-zinc-400 text-sm">Alertas de Sulco (&le; 3mm)</p>
-                <h3 class="text-3xl font-bold text-red-500 mt-2">${criticos.length}</h3>
+                <h3 class="text-3xl font-bold text-lprosp-red mt-2">${criticos.length}</h3>
             </div>
         </div>
 
         <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-            <h3 class="text-lg font-semibold mb-4 text-red-400"><i class="fas fa-triangle-exclamation mr-2"></i> Pneus Críticos que Exigem Troca/Reforma</h3>
+            <h3 class="text-lg font-semibold mb-4 text-lprosp-red flex items-center gap-2">
+                <i class="fas fa-triangle-exclamation"></i> Pneus Críticos que Exigem Atenção
+            </h3>
             ${criticos.length === 0 ? '<p class="text-zinc-500 text-sm">Nenhum pneu em estado crítico no momento.</p>' : `
                 <div class="space-y-3">
                     ${criticos.map(p => `
-                        <div class="flex items-center justify-between p-4 bg-zinc-850 rounded-xl border border-zinc-800">
+                        <div class="flex items-center justify-between p-4 bg-zinc-950 rounded-xl border border-zinc-800">
                             <div>
                                 <span class="font-bold text-white">${p.fuego}</span> - ${p.marca} (${p.medida})
-                                <p class="text-xs text-zinc-500">Sulco Atual: <b class="text-red-400">${p.sulcoAtual} mm</b></p>
+                                <p class="text-xs text-zinc-500">Sulco Atual: <b class="text-lprosp-red">${p.sulcoAtual} mm</b></p>
                             </div>
-                            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20">Atenção Imediata</span>
+                            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-lprosp-red/10 text-lprosp-red border border-lprosp-red/20">Atenção Imediata</span>
                         </div>
                     `).join('')}
                 </div>
@@ -99,7 +101,7 @@ function renderCarretasView(container) {
                                     <h3 class="text-xl font-bold text-white">${carreta.placa}</h3>
                                     <p class="text-sm text-zinc-400">${carreta.modelo} • ${carreta.kmAtual.toLocaleString()} KM</p>
                                 </div>
-                                <span class="bg-orange-500/10 text-orange-400 border border-orange-500/20 text-xs px-3 py-1 rounded-full font-medium">
+                                <span class="bg-lprosp-blue/10 text-lprosp-blue border border-lprosp-blue/20 text-xs px-3 py-1 rounded-full font-medium">
                                     ${carreta.eixos} Eixos
                                 </span>
                             </div>
@@ -119,7 +121,7 @@ function renderCarretasView(container) {
                                             <!-- Pneu Esquerdo -->
                                             <button onclick="handleSlotClick('${carreta.id}', '${posEsquerda}')" 
                                                 class="w-24 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold
-                                                ${pneuE ? (pneuE.sulcoAtual <= 3 ? 'bg-red-950/40 border-red-500/50 text-red-300' : 'bg-orange-950/30 border-orange-500/50 text-orange-200') : 'bg-zinc-900 border-dashed border-zinc-700 text-zinc-500 hover:border-zinc-500'}">
+                                                ${pneuE ? (pneuE.sulcoAtual <= 3 ? 'bg-red-950/40 border-lprosp-red/50 text-red-300' : 'bg-lprosp-blue/10 border-lprosp-blue/50 text-lprosp-blue') : 'bg-zinc-900 border-dashed border-zinc-700 text-zinc-500 hover:border-zinc-500'}">
                                                 <span>${pneuE ? pneuE.fuego : '+ Montar'}</span>
                                                 <span class="text-[10px] opacity-75">${pneuE ? `${pneuE.sulcoAtual}mm` : posEsquerda}</span>
                                             </button>
@@ -130,7 +132,7 @@ function renderCarretasView(container) {
                                             <!-- Pneu Direito -->
                                             <button onclick="handleSlotClick('${carreta.id}', '${posDireita}')" 
                                                 class="w-24 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold
-                                                ${pneuD ? (pneuD.sulcoAtual <= 3 ? 'bg-red-950/40 border-red-500/50 text-red-300' : 'bg-orange-950/30 border-orange-500/50 text-orange-200') : 'bg-zinc-900 border-dashed border-zinc-700 text-zinc-500 hover:border-zinc-500'}">
+                                                ${pneuD ? (pneuD.sulcoAtual <= 3 ? 'bg-red-950/40 border-lprosp-red/50 text-red-300' : 'bg-lprosp-blue/10 border-lprosp-blue/50 text-lprosp-blue') : 'bg-zinc-900 border-dashed border-zinc-700 text-zinc-500 hover:border-zinc-500'}">
                                                 <span>${pneuD ? pneuD.fuego : '+ Montar'}</span>
                                                 <span class="text-[10px] opacity-75">${pneuD ? `${pneuD.sulcoAtual}mm` : posDireita}</span>
                                             </button>
@@ -168,7 +170,7 @@ function showMontarModal(carretaId, posicao) {
             <h3 class="text-xl font-bold mb-1">Montar Pneu na Posição ${posicao}</h3>
             <p class="text-sm text-zinc-400 mb-6">Selecione um pneu do estoque para instalar.</p>
             
-            ${pneusDisponiveis.length === 0 ? '<p class="text-red-400 text-sm">Nenhum pneu disponível no estoque.</p>' : `
+            ${pneusDisponiveis.length === 0 ? '<p class="text-lprosp-red text-sm">Nenhum pneu disponível no estoque.</p>' : `
                 <form onsubmit="confirmarMontagem(event, '${carretaId}', '${posicao}')" class="space-y-4">
                     <div>
                         <label class="block text-xs font-medium text-zinc-400 mb-1">Pneu</label>
@@ -178,7 +180,7 @@ function showMontarModal(carretaId, posicao) {
                     </div>
                     <div class="flex justify-end gap-3 mt-6">
                         <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm">Cancelar</button>
-                        <button type="submit" class="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 font-medium text-sm">Instalar Pneu</button>
+                        <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue hover:bg-lprosp-blue-hover text-white font-medium text-sm">Instalar Pneu</button>
                     </div>
                 </form>
             `}
@@ -224,7 +226,7 @@ function showDesmontarModal(pneu) {
                 </div>
                 <div class="flex justify-end gap-3 mt-6">
                     <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm">Cancelar</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 font-medium text-sm">Confirmar Desmontagem</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-red hover:opacity-90 font-medium text-sm text-white">Confirmar Desmontagem</button>
                 </div>
             </form>
         </div>
@@ -285,7 +287,7 @@ function showAddTireModal() {
                 </div>
                 <div class="flex justify-end gap-3 mt-6">
                     <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-zinc-800 text-sm">Cancelar</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 font-medium text-sm">Salvar Pneu</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue hover:bg-lprosp-blue-hover text-white font-medium text-sm">Salvar Pneu</button>
                 </div>
             </form>
         </div>
