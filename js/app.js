@@ -29,6 +29,15 @@ const state = {
     searchTerm: ''
 };
 
+// Função auxiliar segura para tratar falha de carregamento da logo
+function handleImageError(img) {
+    img.style.display = 'none';
+    const fallback = img.nextElementSibling;
+    if (fallback) {
+        fallback.classList.remove('hidden');
+    }
+}
+
 // ====================================================
 // INICIALIZAÇÃO E MONITORAMENTO
 // ====================================================
@@ -68,7 +77,7 @@ function initRealtimeListeners() {
 }
 
 // ====================================================
-// LOGIN & LOGOUT (Identidade Visual Clara)
+// LOGIN & LOGOUT
 // ====================================================
 function renderLoginView() {
     const container = document.getElementById('main-container');
@@ -77,10 +86,11 @@ function renderLoginView() {
     container.innerHTML = `
         <div class="max-w-md w-full mx-auto bg-white border border-slate-200 rounded-2xl p-8 shadow-xl my-10 text-slate-800">
             <div class="text-center mb-6">
-                <div class="h-24 flex items-center justify-center mx-auto mb-3">
-                    <img src="logo.jpg" alt="L-Prosp" class="max-h-full max-w-full object-contain" onerror="this.onerror=null; this.parentNode.innerHTML='<i class=\"fas fa-truck text-4xl text-[#1e3a8a]\"></i>';">
+                <div class="h-24 flex items-center justify-center mx-auto mb-3 relative">
+                    <img src="logo.jpg" alt="L-Prosp" class="max-h-full max-w-full object-contain" onerror="handleImageError(this)">
+                    <i class="fas fa-truck text-4xl text-[#1e3a8a] hidden fallback-icon"></i>
                 </div>
-                <h2 class="text-2xl font-black tracking-tight font-heading text-slate-900">L-Prosp Logística</h2>
+                <h2 class="text-2xl font-black tracking-tight text-slate-900">L-Prosp Logística</h2>
                 <p class="text-xs text-slate-500 mt-1">Gestão Inteligente de Pneus e Frota</p>
             </div>
 
@@ -95,7 +105,7 @@ function renderLoginView() {
                     <input type="password" id="login-password" placeholder="••••••••" required 
                            class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-[#1e3a8a]">
                 </div>
-                <button type="submit" id="btn-login" class="w-full bg-[#1e3a8a] hover:bg-blue-900 text-white py-3 rounded-xl text-xs font-bold tracking-wider transition shadow-sm">
+                <button type="submit" class="w-full bg-[#1e3a8a] hover:bg-blue-900 text-white py-3 rounded-xl text-xs font-bold tracking-wider transition shadow-sm">
                     ENTRAR NO SISTEMA
                 </button>
             </form>
@@ -139,11 +149,11 @@ function switchTab(tab) {
 
     if (btnCarretas && btnPneus) {
         if (tab === 'carretas') {
-            btnCarretas.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 bg-[#1e3a8a] text-white shadow-sm";
-            btnPneus.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 text-slate-600 bg-white border border-slate-200 hover:bg-slate-50";
+            btnCarretas.className = "px-4 py-1.5 rounded-md text-xs font-bold transition-all duration-150 flex items-center gap-2 bg-[#1e3a8a] text-white shadow-sm";
+            btnPneus.className = "px-4 py-1.5 rounded-md text-xs font-bold transition-all duration-150 flex items-center gap-2 text-slate-600 hover:bg-white";
         } else {
-            btnPneus.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 bg-[#1e3a8a] text-white shadow-sm";
-            btnCarretas.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 text-slate-600 bg-white border border-slate-200 hover:bg-slate-50";
+            btnPneus.className = "px-4 py-1.5 rounded-md text-xs font-bold transition-all duration-150 flex items-center gap-2 bg-[#1e3a8a] text-white shadow-sm";
+            btnCarretas.className = "px-4 py-1.5 rounded-md text-xs font-bold transition-all duration-150 flex items-center gap-2 text-slate-600 hover:bg-white";
         }
     }
 
@@ -220,7 +230,7 @@ function renderVeiculosView(container) {
                 </div>
 
                 <div class="flex justify-between items-center">
-                    <h2 class="text-lg font-black font-heading text-slate-800">FROTA DE VEÍCULOS</h2>
+                    <h2 class="text-lg font-black text-slate-800">FROTA DE VEÍCULOS</h2>
                     <button onclick="showAddVeiculoModal()" class="bg-[#1e3a8a] hover:bg-blue-900 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition">
                         + Novo Veículo
                     </button>
@@ -352,7 +362,7 @@ function renderSlotPneu(veiculoId, pos, pneusDoVeiculo) {
 }
 
 // ====================================================
-// DRAG & DROP & CORREÇÃO DE OCUPAÇÃO DE SLOTS
+// DRAG & DROP
 // ====================================================
 function handleDragStart(e, pneuId) {
     e.dataTransfer.setData('text/plain', pneuId);
@@ -374,7 +384,6 @@ function handleDropToSlot(e, veiculoId, posicao) {
     if (!pneuId) return;
 
     const pneuExistenteNoSlot = state.pneus.find(p => p.veiculoId === veiculoId && p.posicao === posicao);
-
     const updates = {};
     
     if (pneuExistenteNoSlot && pneuExistenteNoSlot.id !== pneuId) {
@@ -441,16 +450,12 @@ function filterEstoqueVisual(term) {
 }
 
 // ====================================================
-// MODAL DE VEÍCULO / NOVO VEÍCULO
+// MODAL DE VEÍCULO
 // ====================================================
-function showAddCarretaModal() {
-    showAddVeiculoModal();
-}
-
 function showAddVeiculoModal() {
     openModal(`
         <div class="p-6">
-            <h3 class="text-lg font-bold text-slate-800 mb-4">Cadastrar Veículo / Carreta</h3>
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Cadastrar Novo Veículo</h3>
             <form onsubmit="salvarVeiculo(event)" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">TIPO DE VEÍCULO</label>
@@ -613,7 +618,6 @@ function salvarPneusEmLote(e) {
     const sulco = parseFloat(document.getElementById('pneu-sulco').value);
 
     const fuegos = fuegosRaw.split(/[\n,]+/).map(f => f.trim()).filter(f => f.length > 0);
-    
     const fuegosExistentes = new Set(state.pneus.map(p => p.fuego));
     const fuegosDuplicados = fuegos.filter(f => fuegosExistentes.has(f));
 
