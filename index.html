@@ -3,9 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PneuControl</title>
+    <title>L-PROSP | Gestão de Pneus e Carretas</title>
+    <!-- Favicon -->
+    <link rel="icon" type="image/jpeg" href="logo.jpg">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        lprosp: {
+                            blue: '#0088CC',
+                            'blue-hover': '#0070A8',
+                            purple: '#3D1C71',
+                            red: '#E52E3A',
+                            green: '#61B228'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body { font-family: 'Inter', system-ui, sans-serif; }
@@ -15,15 +34,10 @@
     <div class="flex h-screen overflow-hidden">
         <!-- Sidebar -->
         <div class="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col">
-            <div class="p-6 border-b border-zinc-800">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center">
-                        <i class="fas fa-truck-front text-white text-xl"></i>
-                    </div>
-                    <div>
-                        <h1 class="text-2xl font-bold tracking-tight">PneuControl</h1>
-                        <p class="text-xs text-zinc-500">Gestão de Carretas</p>
-                    </div>
+            <!-- Logo Section -->
+            <div class="p-5 border-b border-zinc-800 bg-white">
+                <div class="flex items-center justify-center">
+                    <img src="logo.jpg" alt="L-PROSP Soluções que Prosperam" class="h-14 object-contain">
                 </div>
             </div>
             
@@ -40,8 +54,8 @@
             </nav>
             
             <div class="p-4 border-t border-zinc-800 text-xs text-zinc-500 flex items-center justify-between">
-                <span>Dados salvos localmente</span>
-                <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>L-PROSP System</span>
+                <span class="inline-block w-2 h-2 rounded-full bg-lprosp-green"></span>
             </div>
         </div>
         
@@ -54,12 +68,12 @@
                 
                 <div class="flex items-center gap-4">
                     <div class="relative">
-                        <input id="global-search" type="text" placeholder="Buscar fogo ou placa..." onkeyup="handleSearch(this.value)"
-                               class="bg-zinc-800 border border-zinc-700 rounded-full py-2 px-5 pl-10 w-80 text-sm focus:outline-none focus:border-orange-500 transition">
+                        <input id="global-search" type="text" placeholder="Buscar fogo ou placa..." 
+                               class="bg-zinc-800 border border-zinc-700 rounded-full py-2 px-5 pl-10 w-80 text-sm focus:outline-none focus:border-lprosp-blue transition">
                         <i class="fas fa-search absolute left-4 top-3 text-zinc-500 text-sm"></i>
                     </div>
                     <button onclick="showAddTireModal()" 
-                            class="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded-xl text-sm font-medium transition">
+                            class="flex items-center gap-2 bg-lprosp-blue hover:bg-lprosp-blue-hover text-white px-4 py-2 rounded-xl text-sm font-medium transition shadow-lg shadow-lprosp-blue/20">
                         <i class="fas fa-plus"></i>
                         <span>Novo Pneu</span>
                     </button>
