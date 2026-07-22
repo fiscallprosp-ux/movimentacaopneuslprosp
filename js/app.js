@@ -1,266 +1,208 @@
-let currentPage = 'dashboard';
-let state = {
-    pneus: [],
+// ====================================================
+// CONFIGURAÇÃO E INICIALIZAÇÃO DO FIREBASE
+// ====================================================
+const firebaseConfig = {
+    apiKey: "AIzaSyDummyKeyForTemplatePurposes123456",
+    authDomain: "premiacao-lprosp-default-rtdb.firebaseapp.com",
+    databaseURL: "https://premiacao-lprosp-default-rtdb.firebaseio.com",
+    projectId: "premiacao-lprosp-default-rtdb",
+    storageBucket: "premiacao-lprosp-default-rtdb.appspot.com",
+    messagingSenderId: "123456789012",
+    appId: "1:123456789012:web:abcdef1234567890"
+};
+
+if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
+window.rtdb = firebase.database();
+
+// ====================================================
+// ESTADO GLOBAL DA APLICAÇÃO
+// ====================================================
+const state = {
     carretas: [],
+    pneus: [],
+    currentTab: 'carretas',
     searchTerm: ''
 };
 
-let renderTimeout = null;
-const DEFAULT_DOMAIN = '@lprosp.com';
-
-// ----------------------------------------------------
-// SYSTEM TOASTS (Substitui o alert padrão)
-// ----------------------------------------------------
-function showToast(message, type = 'info') {
-    const container = document.getElementById('toast-container');
-    if (!container) return;
-
-    const toast = document.createElement('div');
-    const bgColors = {
-        success: 'bg-emerald-600 text-white',
-        error: 'bg-lprosp-red text-white',
-        info: 'bg-slate-800 text-white'
-    };
-
-    toast.className = `pointer-events-auto px-4 py-3 rounded-xl shadow-lg text-xs font-bold font-heading flex items-center gap-2 transition-all duration-300 transform translate-y-2 opacity-0 ${bgColors[type] || bgColors.info}`;
-    toast.innerHTML = `<span>${message}</span>`;
-
-    container.appendChild(toast);
-
-    setTimeout(() => {
-        toast.classList.remove('translate-y-2', 'opacity-0');
-    }, 10);
-
-    setTimeout(() => {
-        toast.classList.add('opacity-0', 'translate-y-2');
-        setTimeout(() => toast.remove(), 300);
-    }, 3500);
-}
-
-// ----------------------------------------------------
-// GERENCIAMENTO DE AUTENTICAÇÃO
-// ----------------------------------------------------
+// ====================================================
+// INICIALIZAÇÃO E LISTENERS EM TEMPO REAL
+// ====================================================
 document.addEventListener('DOMContentLoaded', () => {
-    window.auth.onAuthStateChanged((user) => {
-        const loginScreen = document.getElementById('login-screen');
-        const appScreen = document.getElementById('app-screen');
-
-        if (user) {
-            loginScreen.classList.add('hidden');
-            appScreen.classList.remove('hidden');
-            
-            const username = user.email.split('@')[0].toUpperCase();
-            document.getElementById('user-display-email').innerText = `L-PROSP • USUÁRIO: ${username}`;
-
-            initRealtimeSync();
-        } else {
-            loginScreen.classList.remove('hidden');
-            appScreen.classList.add('hidden');
-        }
-    });
+    initRealtimeListeners();
 });
 
-async function handleLogin(e) {
-    e.preventDefault();
-    let usuario = document.getElementById('login-email').value.trim().toLowerCase();
-    const password = document.getElementById('login-password').value;
-    const errorDiv = document.getElementById('login-error');
-
-    errorDiv.classList.add('hidden');
-
-    if (!usuario.includes('@')) {
-        usuario = `${usuario}${DEFAULT_DOMAIN}`;
-    }
-
-    try {
-        await window.auth.signInWithEmailAndPassword(usuario, password);
-        showToast("Login efetuado com sucesso!", "success");
-    } catch (error) {
-        console.error("Erro no login:", error);
-        errorDiv.innerText = "Usuário ou senha inválidos. Verifique suas credenciais.";
-        errorDiv.classList.remove('hidden');
-    }
-}
-
-function handleLogout() {
-    window.auth.signOut();
-}
-
-// ----------------------------------------------------
-// SINCRONIZAÇÃO EM TEMPO REAL COM DEBOUNCE
-// ----------------------------------------------------
-function initRealtimeSync() {
-    window.rtdb.ref('pneus').on('value', (snapshot) => {
-        const data = snapshot.val();
-        state.pneus = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-        debouncedRender();
+function initRealtimeListeners() {
+    // Listener de Carretas
+    window.rtdb.ref('carretas').on('value', snapshot => {
+        const data = snapshot.val() || {};
+        state.carretas = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+        renderApp();
     });
 
-    window.rtdb.ref('carretas').on('value', (snapshot) => {
-        const data = snapshot.val();
-        state.carretas = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-        debouncedRender();
+    // Listener de Pneus
+    window.rtdb.ref('pneus').on('value', snapshot => {
+        const data = snapshot.val() || {};
+        state.pneus = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+        updateQuickStats();
+        renderApp();
     });
 }
 
-function debouncedRender() {
-    clearTimeout(renderTimeout);
-    renderTimeout = setTimeout(renderPage, 100);
-}
-
-// ----------------------------------------------------
-// NAVEGAÇÃO ENTRE ABAS
-// ----------------------------------------------------
-function navigate(page) {
-    currentPage = page;
-    state.searchTerm = ''; // Limpa a busca ao trocar de página
-
-    document.querySelectorAll('#sidebar-nav button').forEach(btn => {
-        btn.className = "px-6 py-2.5 rounded-xl text-sm font-bold font-heading transition bg-white text-slate-600 hover:bg-slate-100 border border-slate-200";
-    });
-
-    const activeBtn = document.getElementById(`nav-${page}`);
-    if (activeBtn) {
-        activeBtn.className = "px-6 py-2.5 rounded-xl text-sm font-bold font-heading transition shadow-sm bg-lprosp-blue text-white";
-    }
-
-    renderPage();
-}
-
-function renderPage() {
-    const main = document.getElementById('main-content');
-    if (!main) return;
-
-    if (currentPage === 'dashboard') renderDashboard(main);
-    if (currentPage === 'carretas') renderCarretasView(main);
-    if (currentPage === 'pneus') renderPneusView(main);
-}
-
-// ----------------------------------------------------
-// 1. DASHBOARD
-// ----------------------------------------------------
-function renderDashboard(container) {
+// Atualiza contadores no sub-header
+function updateQuickStats() {
     const emUso = state.pneus.filter(p => p.status === 'Em Uso').length;
-    const emEstoque = state.pneus.filter(p => p.status === 'Estoque').length;
-    const criticos = state.pneus.filter(p => p.sulcoAtual <= 3.0 && p.status !== 'Descartado');
+    const estoque = state.pneus.filter(p => p.status === 'Estoque').length;
+    const reforma = state.pneus.filter(p => p.status === 'Reforma').length;
 
-    container.innerHTML = `
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-center">
-                <p class="text-xs font-bold font-heading text-slate-500 uppercase">Total de Carretas</p>
-                <h3 class="text-3xl font-bold text-slate-800 mt-1">${state.carretas.length}</h3>
-            </div>
-            <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-center border-b-4 border-b-lprosp-blue">
-                <p class="text-xs font-bold font-heading text-slate-500 uppercase">Pneus Em Uso</p>
-                <h3 class="text-3xl font-bold text-lprosp-blue mt-1">${emUso}</h3>
-            </div>
-            <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-center border-b-4 border-b-lprosp-green">
-                <p class="text-xs font-bold font-heading text-slate-500 uppercase">Pneus no Estoque</p>
-                <h3 class="text-3xl font-bold text-lprosp-green mt-1">${emEstoque}</h3>
-            </div>
-            <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-center border-b-4 border-b-lprosp-red">
-                <p class="text-xs font-bold font-heading text-slate-500 uppercase">Alertas (&le; 3mm)</p>
-                <h3 class="text-3xl font-bold text-lprosp-red mt-1">${criticos.length}</h3>
-            </div>
-        </div>
-
-        <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-            <h3 class="text-base font-bold font-heading text-lprosp-red flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
-                <i class="fas fa-triangle-exclamation"></i> PNEUS CRÍTICOS QUE EXIGEM TROCA / REFORMA
-            </h3>
-            ${criticos.length === 0 ? '<p class="text-slate-400 text-xs italic">Nenhum pneu em estado crítico no momento.</p>' : `
-                <div class="space-y-3">
-                    ${criticos.map(p => `
-                        <div class="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
-                            <div>
-                                <span class="font-bold text-slate-800">${escapeHtml(p.fuego)}</span> - <span class="text-slate-600 text-sm">${escapeHtml(p.marca)} (${escapeHtml(p.medida)})</span>
-                                <p class="text-xs text-slate-500 mt-0.5">Sulco Atual: <b class="text-lprosp-red">${p.sulcoAtual} mm</b></p>
-                            </div>
-                            <span class="px-3 py-1 rounded-lg text-xs font-bold font-heading bg-lprosp-red text-white uppercase">Atenção Imediata</span>
-                        </div>
-                    `).join('')}
-                </div>
-            `}
-        </div>
-    `;
+    document.getElementById('stat-em-uso').innerText = emUso;
+    document.getElementById('stat-estoque').innerText = estoque;
+    document.getElementById('stat-reforma').innerText = reforma;
 }
 
-// ----------------------------------------------------
-// 2. CARRETAS / PÁTIO (COM SUPORTE A CAVALO ENGATADO)
-// ----------------------------------------------------
+// Troca de Abas
+function switchTab(tab) {
+    state.currentTab = tab;
+    
+    // Atualiza botões
+    const btnCarretas = document.getElementById('tab-carretas');
+    const btnPneus = document.getElementById('tab-pneus');
+
+    if (tab === 'carretas') {
+        btnCarretas.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 bg-blue-600 text-white shadow-sm";
+        btnPneus.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 text-slate-400 hover:text-white";
+    } else {
+        btnPneus.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 bg-blue-600 text-white shadow-sm";
+        btnCarretas.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 text-slate-400 hover:text-white";
+    }
+
+    renderApp();
+}
+
+function handleSearch(term) {
+    state.searchTerm = term;
+    renderApp();
+}
+
+function renderApp() {
+    const container = document.getElementById('main-container');
+    if (!container) return;
+
+    if (state.currentTab === 'carretas') {
+        renderCarretasView(container);
+    } else {
+        renderPneusView(container);
+    }
+}
+
+// ====================================================
+// 1. VISÃO DE CARRETAS / PÁTIO (DRAG & DROP VISUAL)
+// ====================================================
 function renderCarretasView(container) {
     const carretasFiltradas = state.carretas.filter(c => 
-        c.placa.toLowerCase().includes(state.searchTerm.toLowerCase()) ||
-        c.modelo.toLowerCase().includes(state.searchTerm.toLowerCase()) ||
-        (c.cavaloEngatado && c.cavaloEngatado.toLowerCase().includes(state.searchTerm.toLowerCase()))
+        (c.placa && c.placa.toLowerCase().includes(state.searchTerm.toLowerCase())) ||
+        (c.modelo && c.modelo.toLowerCase().includes(state.searchTerm.toLowerCase()))
     );
 
-    container.innerHTML = `
-        <div class="mb-6 flex justify-between items-center gap-4">
-            <div class="relative flex-1 max-w-md">
-                <i class="fas fa-search absolute left-3.5 top-3 text-slate-400 text-xs"></i>
-                <input type="text" placeholder="Buscar por placa da carreta ou cavalo..." value="${escapeHtml(state.searchTerm)}" 
-                    oninput="state.searchTerm = this.value; renderPage()" 
-                    class="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:border-lprosp-blue shadow-sm">
-            </div>
-        </div>
+    const pneusEstoque = state.pneus.filter(p => p.status === 'Estoque');
 
-        ${carretasFiltradas.length === 0 ? `
-            <div class="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400">
-                <i class="fas fa-truck-front text-4xl mb-3 text-slate-300"></i>
-                <p class="font-bold font-heading text-slate-600">NENHUMA CARRETA ENCONTRADA</p>
-            </div>
-        ` : `
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                ${carretasFiltradas.map(carreta => {
+    container.innerHTML = `
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <!-- COLUNA DA ESQUERDA: DIAGRAMA DAS CARRETAS (8 Colunas) -->
+            <div class="xl:col-span-8 space-y-6">
+                <!-- Zonas de Desmontagem Rápida -->
+                <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <div id="zone-Estoque" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToZone(event, 'Estoque')" 
+                         class="tire-action-zone border-2 border-dashed border-slate-200 rounded-xl p-3 text-center flex flex-col items-center justify-center bg-slate-50 hover:bg-blue-50 transition">
+                        <i class="fas fa-boxes-stacked text-slate-500 mb-1"></i>
+                        <span class="text-[11px] font-bold font-heading text-slate-700">Retornar p/ Estoque</span>
+                    </div>
+                    <div id="zone-Reforma" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToZone(event, 'Reforma')" 
+                         class="tire-action-zone border-2 border-dashed border-slate-200 rounded-xl p-3 text-center flex flex-col items-center justify-center bg-slate-50 hover:bg-orange-50 transition">
+                        <i class="fas fa-wrench text-amber-500 mb-1"></i>
+                        <span class="text-[11px] font-bold font-heading text-slate-700">Enviar p/ Reforma</span>
+                    </div>
+                    <div id="zone-Descartado" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToZone(event, 'Descartado')" 
+                         class="tire-action-zone border-2 border-dashed border-slate-200 rounded-xl p-3 text-center flex flex-col items-center justify-center bg-slate-50 hover:bg-red-50 transition col-span-2 md:col-span-1">
+                        <i class="fas fa-trash-can text-red-500 mb-1"></i>
+                        <span class="text-[11px] font-bold font-heading text-slate-700">Sucata / Descarte</span>
+                    </div>
+                </div>
+
+                <!-- Lista de Carretas -->
+                ${carretasFiltradas.length === 0 ? `
+                    <div class="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400">
+                        <i class="fas fa-truck-front text-4xl mb-3 text-slate-300"></i>
+                        <p class="font-bold font-heading text-slate-600">NENHUMA CARRETA ENCONTRADA</p>
+                    </div>
+                ` : carretasFiltradas.map(carreta => {
                     const pneusDaCarreta = state.pneus.filter(p => p.carretaId === carreta.id);
                     return `
-                        <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                            <div class="flex justify-between items-start mb-4 border-b border-slate-100 pb-3">
+                        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-white shadow-lg">
+                            <div class="flex justify-between items-center mb-6 border-b border-slate-800 pb-3">
                                 <div>
-                                    <h3 class="text-xl font-bold text-slate-800 font-heading">${escapeHtml(carreta.placa)}</h3>
-                                    <p class="text-xs text-slate-500">${escapeHtml(carreta.modelo)} • ${carreta.kmAtual?.toLocaleString() || 0} KM</p>
-                                    ${carreta.cavaloEngatado ? `<span class="inline-block mt-1 text-[11px] font-bold text-lprosp-blue bg-blue-50 px-2 py-0.5 rounded border border-blue-100"><i class="fas fa-truck"></i> Cavalo: ${escapeHtml(carreta.cavaloEngatado)}</span>` : '<span class="inline-block mt-1 text-[10px] text-slate-400 italic">Nenhum cavalo engatado</span>'}
+                                    <div class="flex items-center gap-2">
+                                        <span class="bg-slate-100 text-slate-900 px-2.5 py-0.5 rounded font-black font-heading text-sm uppercase">${escapeHtml(carreta.placa)}</span>
+                                        ${carreta.cavaloEngatado ? `<span class="text-xs text-blue-400 font-bold"><i class="fas fa-truck"></i> ${escapeHtml(carreta.cavaloEngatado)}</span>` : ''}
+                                    </div>
+                                    <p class="text-xs text-slate-400 mt-1">${escapeHtml(carreta.modelo || 'Sem Modelo')} • ${carreta.kmAtual ? carreta.kmAtual.toLocaleString() : 0} KM</p>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <span class="bg-lprosp-blue-light text-lprosp-blue border border-lprosp-blue/20 text-xs px-2.5 py-1 rounded-lg font-bold font-heading">
-                                        ${carreta.eixos} EIXOS
-                                    </span>
-                                    <button onclick="showEditCarretaModal('${carreta.id}')" title="Editar" class="text-slate-400 hover:text-lprosp-blue p-1 transition">
-                                        <i class="fas fa-pen-to-square text-sm"></i>
-                                    </button>
-                                    <button onclick="deletarCarreta('${carreta.id}', '${carreta.placa}')" title="Excluir" class="text-slate-400 hover:text-lprosp-red p-1 transition">
-                                        <i class="fas fa-trash-can text-sm"></i>
-                                    </button>
+                                    <button onclick="showEditCarretaModal('${carreta.id}')" class="text-slate-400 hover:text-white p-1.5"><i class="fas fa-pen-to-square"></i></button>
+                                    <button onclick="deletarCarreta('${carreta.id}', '${carreta.placa}')" class="text-slate-400 hover:text-red-400 p-1.5"><i class="fas fa-trash-can"></i></button>
                                 </div>
                             </div>
 
-                            <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 my-2 flex flex-col items-center gap-4">
-                                <div class="text-[10px] text-slate-400 font-bold font-heading uppercase">Frente da Carreta</div>
+                            <!-- Diagrama do Veículo -->
+                            <div class="flex flex-col items-center gap-6 py-2">
+                                <div class="text-[10px] text-slate-500 font-bold font-heading uppercase tracking-widest">FRENTE DA CARRETA</div>
                                 
-                                ${Array.from({ length: carreta.eixos }, (_, index) => index + 1).map(eixo => {
+                                ${Array.from({ length: carreta.eixos || 3 }, (_, index) => index + 1).map(eixo => {
                                     const posEsquerda = `E${eixo}E`;
                                     const posDireita = `E${eixo}D`;
                                     const pneuE = pneusDaCarreta.find(p => p.posicao === posEsquerda);
                                     const pneuD = pneusDaCarreta.find(p => p.posicao === posDireita);
 
                                     return `
-                                        <div class="flex items-center justify-center gap-6 w-full">
-                                            <button onclick="handleSlotClick('${carreta.id}', '${posEsquerda}')" 
-                                                class="w-28 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold shadow-sm
-                                                ${pneuE ? (pneuE.sulcoAtual <= 3 ? 'bg-red-50 border-lprosp-red text-lprosp-red' : 'bg-blue-50 border-lprosp-blue text-lprosp-blue') : 'bg-white border-dashed border-slate-300 text-slate-400 hover:border-slate-400'}">
-                                                <span class="font-bold">${pneuE ? escapeHtml(pneuE.fuego) : '+ Montar'}</span>
-                                                <span class="text-[10px] opacity-75">${pneuE ? `${pneuE.sulcoAtual}mm` : posEsquerda}</span>
-                                            </button>
+                                        <div class="flex items-center justify-center gap-4 w-full max-w-md">
+                                            <!-- SLOT ESQUERDO -->
+                                            <div ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToSlot(event, '${carreta.id}', '${posEsquerda}')"
+                                                 class="w-36 h-16 rounded-xl border-2 ${pneuE ? (pneuE.sulcoAtual <= 3 ? 'border-red-500 bg-red-950/40' : 'border-blue-500 bg-blue-950/40') : 'border-dashed border-slate-700 bg-slate-800/50'} 
+                                                 flex items-center justify-between px-3 transition-all">
+                                                ${pneuE ? `
+                                                    <div draggable="true" ondragstart="handleDragStart(event, '${pneuE.id}', 'installed')" class="draggable-tire flex items-center gap-2 w-full">
+                                                        <i class="fas fa-circle-notch text-2xl ${pneuE.sulcoAtual <= 3 ? 'text-red-400' : 'text-blue-400'}"></i>
+                                                        <div class="overflow-hidden">
+                                                            <div class="font-black text-xs text-white leading-tight">${escapeHtml(pneuE.fuego)}</div>
+                                                            <div class="text-[10px] text-slate-400">${pneuE.sulcoAtual}mm</div>
+                                                        </div>
+                                                    </div>
+                                                ` : `
+                                                    <div class="text-center w-full text-slate-600 font-bold text-[10px] uppercase">${posEsquerda}<br><span class="text-[8px] font-normal">Solte o pneu</span></div>
+                                                `}
+                                            </div>
 
-                                            <div class="h-2 flex-1 bg-slate-300 rounded-full"></div>
+                                            <!-- EIXO -->
+                                            <div class="h-2.5 flex-1 bg-slate-700 rounded-full border border-slate-600"></div>
 
-                                            <button onclick="handleSlotClick('${carreta.id}', '${posDireita}')" 
-                                                class="w-28 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold shadow-sm
-                                                ${pneuD ? (pneuD.sulcoAtual <= 3 ? 'bg-red-50 border-lprosp-red text-lprosp-red' : 'bg-blue-50 border-lprosp-blue text-lprosp-blue') : 'bg-white border-dashed border-slate-300 text-slate-400 hover:border-slate-400'}">
-                                                <span class="font-bold">${pneuD ? escapeHtml(pneuD.fuego) : '+ Montar'}</span>
-                                                <span class="text-[10px] opacity-75">${pneuD ? `${pneuD.sulcoAtual}mm` : posDireita}</span>
-                                            </button>
+                                            <!-- SLOT DIREITO -->
+                                            <div ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToSlot(event, '${carreta.id}', '${posDireita}')"
+                                                 class="w-36 h-16 rounded-xl border-2 ${pneuD ? (pneuD.sulcoAtual <= 3 ? 'border-red-500 bg-red-950/40' : 'border-blue-500 bg-blue-950/40') : 'border-dashed border-slate-700 bg-slate-800/50'} 
+                                                 flex items-center justify-between px-3 transition-all">
+                                                ${pneuD ? `
+                                                    <div draggable="true" ondragstart="handleDragStart(event, '${pneuD.id}', 'installed')" class="draggable-tire flex items-center gap-2 w-full">
+                                                        <i class="fas fa-circle-notch text-2xl ${pneuD.sulcoAtual <= 3 ? 'text-red-400' : 'text-blue-400'}"></i>
+                                                        <div class="overflow-hidden">
+                                                            <div class="font-black text-xs text-white leading-tight">${escapeHtml(pneuD.fuego)}</div>
+                                                            <div class="text-[10px] text-slate-400">${pneuD.sulcoAtual}mm</div>
+                                                        </div>
+                                                    </div>
+                                                ` : `
+                                                    <div class="text-center w-full text-slate-600 font-bold text-[10px] uppercase">${posDireita}<br><span class="text-[8px] font-normal">Solte o pneu</span></div>
+                                                `}
+                                            </div>
                                         </div>
                                     `;
                                 }).join('')}
@@ -269,158 +211,120 @@ function renderCarretasView(container) {
                     `;
                 }).join('')}
             </div>
-        `}
-    `;
-}
 
-// ----------------------------------------------------
-// 3. ESTOQUE DE PNEUS (COM BUSCA EM TEMPO REAL)
-// ----------------------------------------------------
-function renderPneusView(container) {
-    const pneusFiltrados = state.pneus.filter(p => 
-        p.fuego.toLowerCase().includes(state.searchTerm.toLowerCase()) ||
-        p.marca.toLowerCase().includes(state.searchTerm.toLowerCase()) ||
-        p.status.toLowerCase().includes(state.searchTerm.toLowerCase())
-    );
+            <!-- COLUNA DA DIREITA: ESTOQUE VISUAL (4 Colunas) -->
+            <div class="xl:col-span-4">
+                <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm sticky top-20">
+                    <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
+                        <h3 class="font-bold font-heading text-slate-800 text-sm">ESTOQUE (${pneusEstoque.length})</h3>
+                        <span class="text-[10px] text-slate-400 font-semibold">Arraste para a posição</span>
+                    </div>
 
-    container.innerHTML = `
-        <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-            <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-                <h3 class="text-lg font-bold font-heading text-slate-800">TODOS OS PNEUS (${pneusFiltrados.length})</h3>
-                <div class="relative w-full md:w-72">
-                    <i class="fas fa-search absolute left-3.5 top-3 text-slate-400 text-xs"></i>
-                    <input type="text" placeholder="Buscar por Fogo, Marca ou Status..." value="${escapeHtml(state.searchTerm)}" 
-                        oninput="state.searchTerm = this.value; renderPage()" 
-                        class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:border-lprosp-blue">
+                    <!-- Busca Rápida de Pneus no Estoque -->
+                    <div class="relative mb-4">
+                        <i class="fas fa-search absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                        <input type="text" placeholder="Filtrar nº de fogo..." 
+                               oninput="filterEstoqueVisual(this.value)" 
+                               class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-600">
+                    </div>
+
+                    <!-- Grid de Cards do Estoque -->
+                    <div id="visual-estoque-grid" class="grid grid-cols-3 gap-2.5 max-h-[calc(100vh-230px)] overflow-y-auto pr-1">
+                        ${pneusEstoque.length === 0 ? '<p class="col-span-3 text-center text-slate-400 text-xs py-8">Nenhum pneu no estoque.</p>' : 
+                            pneusEstoque.map(pneu => `
+                                <div draggable="true" 
+                                     ondragstart="handleDragStart(event, '${pneu.id}', 'stock')"
+                                     class="draggable-tire estoque-item bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-500 rounded-xl p-2.5 flex flex-col items-center justify-center transition shadow-sm group">
+                                    <i class="fas fa-circle-notch text-2xl text-slate-700 group-hover:text-blue-600 mb-1 transition"></i>
+                                    <span class="font-black text-xs text-slate-800 font-heading">${escapeHtml(pneu.fuego)}</span>
+                                    <span class="text-[9px] text-slate-500">${pneu.sulcoAtual}mm</span>
+                                </div>
+                            `).join('')
+                        }
+                    </div>
                 </div>
             </div>
 
-            ${pneusFiltrados.length === 0 ? '<p class="text-slate-400 text-xs italic text-center py-8">Nenhum pneu encontrado.</p>' : `
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-xs text-slate-600">
-                        <thead class="bg-slate-50 text-slate-500 font-heading border-b border-slate-200">
-                            <tr>
-                                <th class="p-3">FOGO</th>
-                                <th class="p-3">MARCA / MEDIDA</th>
-                                <th class="p-3">SULCO ATUAL</th>
-                                <th class="p-3">STATUS</th>
-                                <th class="p-3">LOCALIZAÇÃO</th>
-                                <th class="p-3 text-right">AÇÕES</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            ${pneusFiltrados.map(p => {
-                                const carreta = state.carretas.find(c => c.id === p.carretaId);
-                                return `
-                                    <tr>
-                                        <td class="p-3 font-bold text-slate-800">${escapeHtml(p.fuego)}</td>
-                                        <td class="p-3">${escapeHtml(p.marca)} (${escapeHtml(p.medida)})</td>
-                                        <td class="p-3 font-bold ${p.sulcoAtual <= 3 ? 'text-lprosp-red' : 'text-slate-800'}">${p.sulcoAtual} mm</td>
-                                        <td class="p-3"><span class="px-2 py-1 rounded text-[10px] font-bold ${p.status === 'Em Uso' ? 'bg-blue-100 text-lprosp-blue' : 'bg-emerald-100 text-lprosp-green'}">${escapeHtml(p.status)}</span></td>
-                                        <td class="p-3 text-slate-500">${carreta ? `${escapeHtml(carreta.placa)} (${escapeHtml(p.posicao)})` : 'Estoque Central'}</td>
-                                        <td class="p-3 text-right flex justify-end gap-2">
-                                            <button onclick="showEditTireModal('${p.id}')" title="Editar" class="text-slate-400 hover:text-lprosp-blue p-1 transition">
-                                                <i class="fas fa-pen-to-square text-sm"></i>
-                                            </button>
-                                            <button onclick="deletarPneu('${p.id}', '${p.fuego}')" title="Excluir" class="text-slate-400 hover:text-lprosp-red p-1 transition">
-                                                <i class="fas fa-trash-can text-sm"></i>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                `;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `}
         </div>
     `;
 }
 
-// ----------------------------------------------------
-// 4. AÇÕES DE MONTAGEM E DESMONTAGEM
-// ----------------------------------------------------
-function handleSlotClick(carretaId, posicao) {
-    const pneuInstalado = state.pneus.find(p => p.carretaId === carretaId && p.posicao === posicao);
-    if (pneuInstalado) {
-        showDesmontarModal(pneuInstalado);
-    } else {
-        showMontarModal(carretaId, posicao);
-    }
+// ====================================================
+// FUNÇÕES DE DRAG & DROP
+// ====================================================
+function handleDragStart(e, pneuId, sourceType) {
+    e.dataTransfer.setData('text/plain', JSON.stringify({ pneuId, sourceType }));
+    e.dataTransfer.effectAllowed = 'move';
 }
 
-function showMontarModal(carretaId, posicao) {
-    const pneusDisponiveis = state.pneus.filter(p => p.status === 'Estoque');
-
-    openModal(`
-        <div class="p-6">
-            <h3 class="text-lg font-bold font-heading text-slate-800 mb-1">Montar Pneu na Posição ${posicao}</h3>
-            <p class="text-xs text-slate-500 mb-4">Selecione um pneu do estoque para instalar.</p>
-            
-            ${pneusDisponiveis.length === 0 ? '<p class="text-lprosp-red text-xs italic">Nenhum pneu disponível no estoque.</p>' : `
-                <form onsubmit="confirmarMontagem(event, '${carretaId}', '${posicao}')" class="space-y-4">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">SELECIONE O PNEU</label>
-                        <select id="montar-pneu-id" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800" required>
-                            ${pneusDisponiveis.map(p => `<option value="${p.id}">${escapeHtml(p.fuego)} - ${escapeHtml(p.marca)} (${p.sulcoAtual}mm)</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="flex justify-end gap-2 mt-6">
-                        <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
-                        <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue text-white text-xs font-bold font-heading">INSTALAR PNEU</button>
-                    </div>
-                </form>
-            `}
-        </div>
-    `);
-}
-
-function confirmarMontagem(e, carretaId, posicao) {
+function handleDragOver(e) {
     e.preventDefault();
-    const pneuId = document.getElementById('montar-pneu-id').value;
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.classList.add('drop-zone-active', 'drag-over');
+}
+
+function handleDragLeave(e) {
+    e.currentTarget.classList.remove('drop-zone-active', 'drag-over');
+}
+
+// Montar Pneu na Carreta
+function handleDropToSlot(e, carretaId, posicao) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drop-zone-active', 'drag-over');
+
+    const dataRaw = e.dataTransfer.getData('text/plain');
+    if (!dataRaw) return;
+
+    const { pneuId } = JSON.parse(dataRaw);
 
     window.rtdb.ref(`pneus/${pneuId}`).update({
         status: 'Em Uso',
         carretaId: carretaId,
         posicao: posicao
-    }).then(() => {
-        closeModal();
-        showToast("Pneu montado com sucesso!", "success");
-    }).catch(() => showToast("Erro ao instalar pneu.", "error"));
+    }).then(() => showToast(`Pneu instalado na posição ${posicao}!`, "success"))
+      .catch(() => showToast("Erro ao mover pneu.", "error"));
 }
 
-function showDesmontarModal(pneu) {
+// Desmontar / Mover Pneu para Zonas de Ação
+function handleDropToZone(e, destinoStatus) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drop-zone-active', 'drag-over');
+
+    const dataRaw = e.dataTransfer.getData('text/plain');
+    if (!dataRaw) return;
+
+    const { pneuId } = JSON.parse(dataRaw);
+    const pneu = state.pneus.find(p => p.id === pneuId);
+
+    if (pneu) {
+        showDesmontarModalComDestino(pneu, destinoStatus);
+    }
+}
+
+// Modal de Desmontagem com Sulco
+function showDesmontarModalComDestino(pneu, destino) {
     openModal(`
         <div class="p-6">
-            <h3 class="text-lg font-bold font-heading text-slate-800 mb-1">Desmontar Pneu ${escapeHtml(pneu.fuego)}</h3>
-            <p class="text-xs text-slate-500 mb-4">Informe o sulco medido e o destino do pneu.</p>
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-1">Mover Pneu ${escapeHtml(pneu.fuego)}</h3>
+            <p class="text-xs text-slate-500 mb-4">Destino selecionado: <b class="text-blue-600">${destino}</b>. Atualize a medição do sulco.</p>
 
-            <form onsubmit="confirmarDesmontagem(event, '${pneu.id}')" class="space-y-4">
+            <form onsubmit="confirmarMovimentacaoDrag(event, '${pneu.id}', '${destino}')" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">MEDIÇÃO DE SULCO ATUAL (MM)</label>
-                    <input type="number" step="0.1" id="desmontar-sulco" value="${pneu.sulcoAtual}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800" required>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">DESTINO DO PNEU</label>
-                    <select id="desmontar-destino" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800">
-                        <option value="Estoque">Retornar ao Estoque</option>
-                        <option value="Reforma">Enviar para Reforma / Recape</option>
-                        <option value="Descartado">Descarte / Sucata</option>
-                    </select>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">SULCO ATUAL MEDIDO (MM)</label>
+                    <input type="number" step="0.1" id="drag-sulco" value="${pneu.sulcoAtual || 10}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-blue-600" required>
                 </div>
                 <div class="flex justify-end gap-2 mt-6">
-                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-red text-white text-xs font-bold font-heading">CONFIRMAR DESMONTAGEM</button>
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading hover:bg-slate-200 transition">CANCELAR</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold font-heading hover:bg-blue-500 transition">CONFIRMAR</button>
                 </div>
             </form>
         </div>
     `);
 }
 
-function confirmarDesmontagem(e, pneuId) {
+function confirmarMovimentacaoDrag(e, pneuId, destino) {
     e.preventDefault();
-    const sulco = parseFloat(document.getElementById('desmontar-sulco').value);
-    const destino = document.getElementById('desmontar-destino').value;
+    const sulco = parseFloat(document.getElementById('drag-sulco').value);
 
     window.rtdb.ref(`pneus/${pneuId}`).update({
         sulcoAtual: sulco,
@@ -429,328 +333,269 @@ function confirmarDesmontagem(e, pneuId) {
         posicao: null
     }).then(() => {
         closeModal();
-        showToast("Pneu desmontado com sucesso!", "success");
-    }).catch(() => showToast("Erro ao desmontar pneu.", "error"));
+        showToast(`Pneu movido para ${destino}!`, "success");
+    }).catch(() => showToast("Erro ao movimentar pneu.", "error"));
 }
 
-// ----------------------------------------------------
-// 5. MODAIS DE CADASTRO E EDIÇÃO DE PNEUS (COM VALIDAÇÃO DE DUPLICIDADE)
-// ----------------------------------------------------
-function showAddTireModal() {
+function filterEstoqueVisual(term) {
+    const items = document.querySelectorAll('.estoque-item');
+    items.forEach(item => {
+        const fuego = item.querySelector('.font-black').innerText.toLowerCase();
+        if (fuego.includes(term.toLowerCase())) {
+            item.style.display = 'flex';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
+// ====================================================
+// 2. VISÃO DE TABELA DE PNEUS (ESTOQUE E HISTÓRICO)
+// ====================================================
+function renderPneusView(container) {
+    const pneusFiltrados = state.pneus.filter(p => 
+        (p.fuego && p.fuego.toLowerCase().includes(state.searchTerm.toLowerCase())) ||
+        (p.marca && p.marca.toLowerCase().includes(state.searchTerm.toLowerCase())) ||
+        (p.status && p.status.toLowerCase().includes(state.searchTerm.toLowerCase()))
+    );
+
+    container.innerHTML = `
+        <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+                <h3 class="font-bold font-heading text-slate-800 text-sm">TODOS OS PNEUS (${pneusFiltrados.length})</h3>
+                <button onclick="showAddPneuModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold font-heading transition">
+                    + Cadastrar em Lote
+                </button>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
+                        <tr>
+                            <th class="p-3.5">Nº de Fogo</th>
+                            <th class="p-3.5">Marca / Modelo</th>
+                            <th class="p-3.5">Medida</th>
+                            <th class="p-3.5">Sulco Atual</th>
+                            <th class="p-3.5">Status</th>
+                            <th class="p-3.5">Localização</th>
+                            <th class="p-3.5 text-right">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        ${pneusFiltrados.length === 0 ? `
+                            <tr>
+                                <td colspan="7" class="p-8 text-center text-slate-400">Nenhum pneu encontrado.</td>
+                            </tr>
+                        ` : pneusFiltrados.map(pneu => {
+                            const carreta = state.carretas.find(c => c.id === pneu.carretaId);
+                            return `
+                                <tr class="hover:bg-slate-50 transition">
+                                    <td class="p-3.5 font-black text-slate-800 font-heading">${escapeHtml(pneu.fuego)}</td>
+                                    <td class="p-3.5 text-slate-600">${escapeHtml(pneu.marca || '-')} ${pneu.modelo ? '/ ' + escapeHtml(pneu.modelo) : ''}</td>
+                                    <td class="p-3.5 text-slate-600">${escapeHtml(pneu.medida || '-')}</td>
+                                    <td class="p-3.5 font-semibold ${pneu.sulcoAtual <= 3 ? 'text-red-600' : 'text-slate-800'}">${pneu.sulcoAtual} mm</td>
+                                    <td class="p-3.5">
+                                        <span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                            pneu.status === 'Em Uso' ? 'bg-emerald-100 text-emerald-700' :
+                                            pneu.status === 'Estoque' ? 'bg-blue-100 text-blue-700' :
+                                            pneu.status === 'Reforma' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
+                                        }">
+                                            ${pneu.status}
+                                        </span>
+                                    </td>
+                                    <td class="p-3.5 text-slate-600">
+                                        ${carreta ? `<span class="font-bold text-slate-700">${escapeHtml(carreta.placa)}</span> (${pneu.posicao})` : 'Estoque'}
+                                    </td>
+                                    <td class="p-3.5 text-right space-x-1">
+                                        <button onclick="deletarPneu('${pneu.id}', '${pneu.fuego}')" class="text-slate-400 hover:text-red-500 p-1"><i class="fas fa-trash-can"></i></button>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+// ====================================================
+// MODAIS DE CADASTRO E EDIÇÃO
+// ====================================================
+
+// Modal para Cadastrar Pneu (Unidade ou Lote)
+function showAddPneuModal() {
     openModal(`
         <div class="p-6">
-            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">CADASTRAR NOVO(S) PNEU(S)</h3>
-            <form onsubmit="cadastrarPneu(event)" class="space-y-4">
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE FOGO (Separe por vírgula)</label>
-                        <input type="text" id="pneu-fuego" placeholder="Ex: 101,102,103,104" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">MARCA</label>
-                        <input type="text" id="pneu-marca" placeholder="Ex: Michelin" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                    </div>
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">Cadastrar Pneus</h3>
+            <form onsubmit="salvarPneusEmLote(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">NÚMEROS DE FOGO (Um por linha ou separados por vírgula)</label>
+                    <textarea id="pneu-fuegos" rows="3" placeholder="Ex: 227, 228, 229" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-blue-600" required></textarea>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">MEDIDA</label>
-                        <input type="text" id="pneu-medida" value="295/80 R22.5" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">MARCA</label>
+                        <input type="text" id="pneu-marca" placeholder="Ex: Michelin" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-800" required>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">SULCO NOVO (MM)</label>
-                        <input type="number" step="0.1" id="pneu-sulco" value="15" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">MEDIDA</label>
+                        <input type="text" id="pneu-medida" placeholder="Ex: 295/80 R22.5" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-800" required>
                     </div>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">VALOR UN. DE COMPRA (R$)</label>
-                    <input type="number" id="pneu-valor" placeholder="1000" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">SULCO INICIAL (MM)</label>
+                    <input type="number" step="0.1" id="pneu-sulco" value="15.0" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-800" required>
                 </div>
                 <div class="flex justify-end gap-2 mt-6">
                     <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue text-white text-xs font-bold font-heading">SALVAR PNEU(S)</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold font-heading">SALVAR PNEUS</button>
                 </div>
             </form>
         </div>
     `);
 }
 
-function cadastrarPneu(e) {
+function salvarPneusEmLote(e) {
     e.preventDefault();
-
-    const inputFuego = document.getElementById('pneu-fuego').value;
+    const fuegosRaw = document.getElementById('pneu-fuegos').value;
     const marca = document.getElementById('pneu-marca').value;
     const medida = document.getElementById('pneu-medida').value;
-    const sulcoAtual = parseFloat(document.getElementById('pneu-sulco').value);
-    const valor = parseFloat(document.getElementById('pneu-valor').value);
+    const sulco = parseFloat(document.getElementById('pneu-sulco').value);
 
-    // Separa os números de fogo digitados
-    const listaFuegos = inputFuego.split(',')
-                                  .map(f => f.trim())
-                                  .filter(f => f.length > 0);
+    const fuegos = fuegosRaw.split(/[\n,]+/).map(f => f.trim()).filter(f => f.length > 0);
 
-    if (listaFuegos.length === 0) {
-        showToast("Informe pelo menos um número de fogo.", "error");
-        return;
-    }
-
-    // VALIDAÇÃO DE FOGO DUPLICADO: Verifica se algum já existe no banco
-    const fogosExistentes = state.pneus.map(p => p.fuego.toLowerCase());
-    const duplicados = listaFuegos.filter(f => fogosExistentes.includes(f.toLowerCase()));
-
-    if (duplicados.length > 0) {
-        showToast(`Fogo(s) já existente(s): ${duplicados.join(', ')}`, "error");
+    if (fuegos.length === 0) {
+        showToast("Digite ao menos um número de fogo.", "error");
         return;
     }
 
     const updates = {};
-    listaFuegos.forEach(fuego => {
-        const newKey = window.rtdb.ref().child('pneus').push().key;
-        updates[`pneus/${newKey}`] = {
+    fuegos.forEach(fuego => {
+        const newRef = window.rtdb.ref('pneus').push();
+        updates[`pneus/${newRef.key}`] = {
             fuego: fuego,
             marca: marca,
             medida: medida,
-            sulcoAtual: sulcoAtual,
-            valor: valor,
-            vida: 'Nova',
+            sulcoAtual: sulco,
             status: 'Estoque',
             carretaId: null,
-            posicao: null,
-            kmRodados: 0
+            posicao: null
         };
     });
 
-    window.rtdb.ref().update(updates)
-        .then(() => {
-            closeModal();
-            showToast(`${listaFuegos.length} pneu(s) cadastrado(s) com sucesso!`, "success");
-        })
-        .catch(() => showToast("Erro ao cadastrar pneus.", "error"));
-}
-
-function showEditTireModal(pneuId) {
-    const pneu = state.pneus.find(p => p.id === pneuId);
-    if (!pneu) return;
-
-    const isEmUso = pneu.status === 'Em Uso';
-
-    openModal(`
-        <div class="p-6">
-            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">EDITAR PNEU ${escapeHtml(pneu.fuego)}</h3>
-            <form onsubmit="salvarEdicaoPneu(event, '${pneu.id}')" class="space-y-4">
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE FOGO ${isEmUso ? '(Bloqueado - Em Uso)' : ''}</label>
-                        <input type="text" id="pneu-fuego" value="${escapeHtml(pneu.fuego)}" ${isEmUso ? 'disabled' : ''} class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs disabled:opacity-50" required>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">MARCA</label>
-                        <input type="text" id="pneu-marca" value="${escapeHtml(pneu.marca)}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">MEDIDA</label>
-                        <input type="text" id="pneu-medida" value="${escapeHtml(pneu.medida)}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">SULCO ATUAL (MM)</label>
-                        <input type="number" step="0.1" id="pneu-sulco" value="${pneu.sulcoAtual}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">VALOR DE COMPRA (R$)</label>
-                    <input type="number" id="pneu-valor" value="${pneu.valor || 0}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                </div>
-                <div class="flex justify-end gap-2 mt-6">
-                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue text-white text-xs font-bold font-heading">SALVAR ALTERAÇÕES</button>
-                </div>
-            </form>
-        </div>
-    `);
-}
-
-function salvarEdicaoPneu(e, pneuId) {
-    e.preventDefault();
-    const novoFuego = document.getElementById('pneu-fuego').value.trim();
-
-    // Valida se alterou o fuego para um que já existe
-    const pneuExistente = state.pneus.find(p => p.fuego.toLowerCase() === novoFuego.toLowerCase() && p.id !== pneuId);
-    if (pneuExistente) {
-        showToast(`O fogo ${novoFuego} já está cadastrado em outro pneu.`, "error");
-        return;
-    }
-
-    window.rtdb.ref(`pneus/${pneuId}`).update({
-        fuego: novoFuego,
-        marca: document.getElementById('pneu-marca').value,
-        medida: document.getElementById('pneu-medida').value,
-        sulcoAtual: parseFloat(document.getElementById('pneu-sulco').value),
-        valor: parseFloat(document.getElementById('pneu-valor').value)
-    }).then(() => {
+    window.rtdb.ref().update(updates).then(() => {
         closeModal();
-        showToast("Pneu atualizado com sucesso!", "success");
-    }).catch(() => showToast("Erro ao editar pneu.", "error"));
+        showToast(`${fuegos.length} pneu(s) cadastrado(s) no estoque!`, "success");
+    }).catch(() => showToast("Erro ao salvar pneus.", "error"));
 }
 
-function deletarPneu(pneuId, fuego) {
-    if (confirm(`Tem certeza que deseja excluir o pneu ${fuego}?`)) {
-        window.rtdb.ref(`pneus/${pneuId}`).remove()
-            .then(() => showToast("Pneu excluído.", "success"))
-            .catch(() => showToast("Erro ao excluir pneu.", "error"));
-    }
-}
-
-// ----------------------------------------------------
-// 6. MODAIS DE CADASTRO E EDIÇÃO DE CARRETAS
-// ----------------------------------------------------
+// Modal para Cadastrar Carreta
 function showAddCarretaModal() {
     openModal(`
         <div class="p-6">
-            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">CADASTRAR NOVA CARRETA</h3>
-            <form onsubmit="cadastrarCarreta(event)" class="space-y-4">
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">Nova Carreta</h3>
+            <form onsubmit="salvarCarreta(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">PLACA</label>
+                    <input type="text" id="carreta-placa" placeholder="ABC1D23" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs uppercase" required>
+                </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">PLACA DA CARRETA</label>
-                        <input type="text" id="carreta-placa" placeholder="Ex: ABC-1234" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">MODELO</label>
+                        <input type="text" id="carreta-modelo" placeholder="Ex: Randon 3 Eixos" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">CAVALO ENGATADO (Opcional)</label>
-                        <input type="text" id="carreta-cavalo" placeholder="Ex: DEF-5678" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs">
+                        <label class="block text-xs font-bold text-slate-600 mb-1">QTD DE EIXOS</label>
+                        <select id="carreta-eixos" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs">
+                            <option value="2">2 Eixos (4 Rodas)</option>
+                            <option value="3" selected>3 Eixos (6 Rodas)</option>
+                            <option value="4">4 Eixos (8 Rodas)</option>
+                        </select>
                     </div>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">MODELO</label>
-                    <input type="text" id="carreta-modelo" placeholder="Ex: Vanderléia 3 Eixos" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">QTD DE EIXOS</label>
-                        <input type="number" id="carreta-eixos" min="1" max="6" value="3" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL</label>
-                        <input type="number" id="carreta-km" value="0" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                    </div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">CAVALO ENGATADO (OPCIONAL)</label>
+                    <input type="text" id="carreta-cavalo" placeholder="Ex: Scania R450" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs">
                 </div>
                 <div class="flex justify-end gap-2 mt-6">
                     <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-red text-white text-xs font-bold font-heading">SALVAR CARRETA</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold font-heading">SALVAR CARRETA</button>
                 </div>
             </form>
         </div>
     `);
 }
 
-function cadastrarCarreta(e) {
+function salvarCarreta(e) {
     e.preventDefault();
-    const novaCarreta = {
-        placa: document.getElementById('carreta-placa').value.toUpperCase().trim(),
-        cavaloEngatado: document.getElementById('carreta-cavalo').value.toUpperCase().trim() || null,
-        modelo: document.getElementById('carreta-modelo').value,
-        eixos: parseInt(document.getElementById('carreta-eixos').value),
-        kmAtual: parseInt(document.getElementById('carreta-km').value)
-    };
+    const placa = document.getElementById('carreta-placa').value.toUpperCase().trim();
+    const modelo = document.getElementById('carreta-modelo').value.trim();
+    const eixos = parseInt(document.getElementById('carreta-eixos').value);
+    const cavalo = document.getElementById('carreta-cavalo').value.trim();
 
-    window.rtdb.ref('carretas').push(novaCarreta)
-        .then(() => {
-            closeModal();
-            showToast("Carreta cadastrada com sucesso!", "success");
-        })
-        .catch(() => showToast("Erro ao cadastrar carreta.", "error"));
-}
-
-function showEditCarretaModal(carretaId) {
-    const carreta = state.carretas.find(c => c.id === carretaId);
-    if (!carreta) return;
-
-    openModal(`
-        <div class="p-6">
-            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">EDITAR CARRETA ${escapeHtml(carreta.placa)}</h3>
-            <form onsubmit="salvarEdicaoCarreta(event, '${carreta.id}')" class="space-y-4">
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">PLACA DA CARRETA</label>
-                        <input type="text" id="carreta-placa" value="${escapeHtml(carreta.placa)}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">CAVALO ENGATADO</label>
-                        <input type="text" id="carreta-cavalo" value="${escapeHtml(carreta.cavaloEngatado || '')}" placeholder="Ex: DEF-5678" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs">
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">MODELO</label>
-                    <input type="text" id="carreta-modelo" value="${escapeHtml(carreta.modelo)}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">QTD DE EIXOS</label>
-                        <input type="number" id="carreta-eixos" min="1" max="6" value="${carreta.eixos}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL</label>
-                        <input type="number" id="carreta-km" value="${carreta.kmAtual || 0}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
-                    </div>
-                </div>
-                <div class="flex justify-end gap-2 mt-6">
-                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue text-white text-xs font-bold font-heading">SALVAR ALTERAÇÕES</button>
-                </div>
-            </form>
-        </div>
-    `);
-}
-
-function salvarEdicaoCarreta(e, carretaId) {
-    e.preventDefault();
-    window.rtdb.ref(`carretas/${carretaId}`).update({
-        placa: document.getElementById('carreta-placa').value.toUpperCase().trim(),
-        cavaloEngatado: document.getElementById('carreta-cavalo').value.toUpperCase().trim() || null,
-        modelo: document.getElementById('carreta-modelo').value,
-        eixos: parseInt(document.getElementById('carreta-eixos').value),
-        kmAtual: parseInt(document.getElementById('carreta-km').value)
+    window.rtdb.ref('carretas').push({
+        placa: placa,
+        modelo: modelo,
+        eixos: eixos,
+        cavaloEngatado: cavalo,
+        kmAtual: 0
     }).then(() => {
         closeModal();
-        showToast("Carreta atualizada!", "success");
-    }).catch(() => showToast("Erro ao editar carreta.", "error"));
+        showToast("Carreta adicionada com sucesso!", "success");
+    }).catch(() => showToast("Erro ao cadastrar carreta.", "error"));
 }
 
-// CORREÇÃO CRÍTICA DO BUG DE EXCLUSÃO (ATÔMICO):
-async function deletarCarreta(carretaId, placa) {
-    if (!confirm(`Tem certeza que deseja excluir a carreta ${placa}? Todos os pneus montados nela voltarão para o estoque.`)) return;
-
-    try {
-        const updates = {};
-        
-        // 1. Apaga a carreta
-        updates[`carretas/${carretaId}`] = null;
-
-        // 2. Desmonta todos os pneus vinculados a ela em uma única transação
-        const pneusDaCarreta = state.pneus.filter(p => p.carretaId === carretaId);
-        pneusDaCarreta.forEach(pneu => {
-            updates[`pneus/${pneu.id}/carretaId`] = null;
-            updates[`pneus/${pneu.id}/posicao`] = null;
-            updates[`pneus/${pneu.id}/status`] = 'Estoque';
-        });
-
-        await window.rtdb.ref().update(updates);
-        showToast("Carreta excluída e pneus retornados ao estoque.", "success");
-    } catch (e) {
-        console.error(e);
-        showToast("Erro ao excluir carreta.", "error");
+function deletarCarreta(id, placa) {
+    if (confirm(`Tem certeza que deseja excluir a carreta ${placa}?`)) {
+        window.rtdb.ref(`carretas/${id}`).remove()
+            .then(() => showToast("Carreta removida!", "success"))
+            .catch(() => showToast("Erro ao remover carreta.", "error"));
     }
 }
 
-// ----------------------------------------------------
-// HELPERS E SANITIZAÇÃO
-// ----------------------------------------------------
-function openModal(content) {
-    document.getElementById('modal-content').innerHTML = content;
-    document.getElementById('modal').classList.remove('hidden');
+function deletarPneu(id, fuego) {
+    if (confirm(`Tem certeza que deseja excluir o pneu nº ${fuego}?`)) {
+        window.rtdb.ref(`pneus/${id}`).remove()
+            .then(() => showToast("Pneu removido!", "success"))
+            .catch(() => showToast("Erro ao remover pneu.", "error"));
+    }
+}
+
+// ====================================================
+// UTILITÁRIOS (MODAIS, TOASTS E SEGURANÇA)
+// ====================================================
+function openModal(htmlContent) {
+    const container = document.getElementById('modal-container');
+    const content = document.getElementById('modal-content');
+    content.innerHTML = htmlContent;
+    container.classList.remove('hidden');
 }
 
 function closeModal() {
-    document.getElementById('modal').classList.add('hidden');
+    const container = document.getElementById('modal-container');
+    container.classList.add('hidden');
+}
+
+function showToast(message, type = 'info') {
+    const toastContainer = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    
+    const bgColor = type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-red-600' : 'bg-slate-800';
+    
+    toast.className = `${bgColor} text-white px-4 py-3 rounded-xl shadow-lg text-xs font-bold font-heading flex items-center gap-2 transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto`;
+    toast.innerHTML = `<i class="fas ${type === 'success' ? 'fa-circle-check' : 'fa-circle-info'}"></i> ${escapeHtml(message)}`;
+
+    toastContainer.appendChild(toast);
+
+    setTimeout(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+    }, 10);
+
+    setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 function escapeHtml(str) {
