@@ -369,17 +369,17 @@ function confirmarDesmontagem(e, pneuId) {
 }
 
 // ----------------------------------------------------
-// 5. MODAIS DE CADASTRO E EDIÇÃO DE PNEUS
+// 5. MODAIS DE CADASTRO E EDIÇÃO DE PNEUS (SUPORTE A LOTE)
 // ----------------------------------------------------
 function showAddTireModal() {
     openModal(`
         <div class="p-6">
-            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">CADASTRAR NOVO PNEU</h3>
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">CADASTRAR NOVO(S) PNEU(S)</h3>
             <form onsubmit="cadastrarPneu(event)" class="space-y-4">
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE FOGO</label>
-                        <input type="text" id="pneu-fuego" placeholder="Ex: P-102" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE FOGO (Separe por vírgula)</label>
+                        <input type="text" id="pneu-fuego" placeholder="Ex: 101,102,103,104,105" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">MARCA</label>
@@ -397,12 +397,12 @@ function showAddTireModal() {
                     </div>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">VALOR DE COMPRA (R$)</label>
-                    <input type="number" id="pneu-valor" placeholder="2200" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">VALOR UN. DE COMPRA (R$)</label>
+                    <input type="number" id="pneu-valor" placeholder="1000" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
                 </div>
                 <div class="flex justify-end gap-2 mt-6">
                     <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue text-white text-xs font-bold font-heading">SALVAR PNEU</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue text-white text-xs font-bold font-heading">SALVAR PNEU(S)</button>
                 </div>
             </form>
         </div>
@@ -411,20 +411,41 @@ function showAddTireModal() {
 
 function cadastrarPneu(e) {
     e.preventDefault();
-    const novoPneu = {
-        fuego: document.getElementById('pneu-fuego').value,
-        marca: document.getElementById('pneu-marca').value,
-        medida: document.getElementById('pneu-medida').value,
-        sulcoAtual: parseFloat(document.getElementById('pneu-sulco').value),
-        valor: parseFloat(document.getElementById('pneu-valor').value),
-        vida: 'Nova',
-        status: 'Estoque',
-        carretaId: null,
-        posicao: null,
-        kmRodados: 0
-    };
 
-    window.rtdb.ref('pneus').push(novoPneu)
+    const inputFuego = document.getElementById('pneu-fuego').value;
+    const marca = document.getElementById('pneu-marca').value;
+    const medida = document.getElementById('pneu-medida').value;
+    const sulcoAtual = parseFloat(document.getElementById('pneu-sulco').value);
+    const valor = parseFloat(document.getElementById('pneu-valor').value);
+
+    // Separa os fogos por vírgula e limpa espaços extras
+    const listaFuegos = inputFuego.split(',')
+                                  .map(f => f.trim())
+                                  .filter(f => f.length > 0);
+
+    if (listaFuegos.length === 0) {
+        alert("Informe pelo menos um número de fogo válido.");
+        return;
+    }
+
+    // Cria as promessas do Firebase para salvar cada pneu
+    const promises = listaFuegos.map(fuego => {
+        const novoPneu = {
+            fuego: fuego,
+            marca: marca,
+            medida: medida,
+            sulcoAtual: sulcoAtual,
+            valor: valor,
+            vida: 'Nova',
+            status: 'Estoque',
+            carretaId: null,
+            posicao: null,
+            kmRodados: 0
+        };
+        return window.rtdb.ref('pneus').push(novoPneu);
+    });
+
+    Promise.all(promises)
         .then(() => closeModal())
         .catch(() => alert("Erro ao salvar. Verifique se o seu usuário tem permissão de edição."));
 }
@@ -594,7 +615,6 @@ function deletarCarreta(carretaId, placa) {
     if (confirm(`Tem certeza que deseja excluir a carreta ${placa}?`)) {
         window.rtdb.ref(`carretas/${carretaId}`).remove()
             .then(() => {
-                // Ao excluir a carreta, move os pneus que estavam instalados de volta para o estoque
                 state.pneus.filter(p => p.carretaId === carretaId).forEach(pneu => {
                     window.rtdb.ref(`pneus/${pneu.id}`).update({
                         carretaId: null,
