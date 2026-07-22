@@ -1,24 +1,16 @@
 let currentPage = 'dashboard';
 
-// Navegação de Telas
+// Navegação de Telas por Abas
 function navigate(page) {
     currentPage = page;
     document.querySelectorAll('#sidebar-nav button').forEach(btn => {
-        btn.classList.remove('bg-lprosp-blue/10', 'text-lprosp-blue', 'font-semibold');
-        btn.classList.add('text-zinc-400');
+        btn.className = "px-6 py-2.5 rounded-xl text-sm font-bold font-heading transition bg-white text-slate-600 hover:bg-slate-100 border border-slate-200";
     });
 
     const activeBtn = document.getElementById(`nav-${page}`);
     if (activeBtn) {
-        activeBtn.classList.add('bg-lprosp-blue/10', 'text-lprosp-blue', 'font-semibold');
+        activeBtn.className = "px-6 py-2.5 rounded-xl text-sm font-bold font-heading transition shadow-sm bg-lprosp-blue text-white";
     }
-
-    const titleMap = {
-        'dashboard': 'Dashboard Geral',
-        'carretas': 'Gestão de Carretas & Pátio',
-        'pneus': 'Estoque & Saúde dos Pneus'
-    };
-    document.getElementById('page-title').innerText = titleMap[page] || 'L-PROSP';
 
     renderPage();
 }
@@ -31,7 +23,7 @@ function renderPage() {
 }
 
 // ----------------------------------------------------
-// 1. DASHBOARD
+// 1. DASHBOARD CLARO
 // ----------------------------------------------------
 function renderDashboard(container) {
     const pneus = DB.get('pneus');
@@ -42,38 +34,38 @@ function renderDashboard(container) {
     const criticos = pneus.filter(p => p.sulcoAtual <= 3.0 && p.status !== 'Descartado');
 
     container.innerHTML = `
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div class="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl">
-                <p class="text-zinc-400 text-sm">Total de Carretas</p>
-                <h3 class="text-3xl font-bold mt-2">${carretas.length}</h3>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-center">
+                <p class="text-xs font-bold font-heading text-slate-500 uppercase tracking-wider">Total de Carretas</p>
+                <h3 class="text-3xl font-bold text-slate-800 mt-1">${carretas.length}</h3>
             </div>
-            <div class="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl">
-                <p class="text-zinc-400 text-sm">Pneus Em Uso</p>
-                <h3 class="text-3xl font-bold text-lprosp-blue mt-2">${emUso}</h3>
+            <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-center border-b-4 border-b-lprosp-blue">
+                <p class="text-xs font-bold font-heading text-slate-500 uppercase tracking-wider">Pneus Em Uso</p>
+                <h3 class="text-3xl font-bold text-lprosp-blue mt-1">${emUso}</h3>
             </div>
-            <div class="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl">
-                <p class="text-zinc-400 text-sm">Pneus no Estoque</p>
-                <h3 class="text-3xl font-bold text-lprosp-green mt-2">${emEstoque}</h3>
+            <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-center border-b-4 border-b-lprosp-green">
+                <p class="text-xs font-bold font-heading text-slate-500 uppercase tracking-wider">Pneus no Estoque</p>
+                <h3 class="text-3xl font-bold text-lprosp-green mt-1">${emEstoque}</h3>
             </div>
-            <div class="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl">
-                <p class="text-zinc-400 text-sm">Alertas de Sulco (&le; 3mm)</p>
-                <h3 class="text-3xl font-bold text-lprosp-red mt-2">${criticos.length}</h3>
+            <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-center border-b-4 border-b-lprosp-red">
+                <p class="text-xs font-bold font-heading text-slate-500 uppercase tracking-wider">Alertas (&le; 3mm)</p>
+                <h3 class="text-3xl font-bold text-lprosp-red mt-1">${criticos.length}</h3>
             </div>
         </div>
 
-        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-            <h3 class="text-lg font-semibold mb-4 text-lprosp-red flex items-center gap-2">
-                <i class="fas fa-triangle-exclamation"></i> Pneus Críticos que Exigem Atenção
+        <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <h3 class="text-base font-bold font-heading text-lprosp-red flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                <i class="fas fa-triangle-exclamation"></i> PNEUS CRÍTICOS QUE EXIGEM TROCA / REFORMA
             </h3>
-            ${criticos.length === 0 ? '<p class="text-zinc-500 text-sm">Nenhum pneu em estado crítico no momento.</p>' : `
+            ${criticos.length === 0 ? '<p class="text-slate-400 text-xs italic">Nenhum pneu em estado crítico no momento.</p>' : `
                 <div class="space-y-3">
                     ${criticos.map(p => `
-                        <div class="flex items-center justify-between p-4 bg-zinc-950 rounded-xl border border-zinc-800">
+                        <div class="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
                             <div>
-                                <span class="font-bold text-white">${p.fuego}</span> - ${p.marca} (${p.medida})
-                                <p class="text-xs text-zinc-500">Sulco Atual: <b class="text-lprosp-red">${p.sulcoAtual} mm</b></p>
+                                <span class="font-bold text-slate-800">${p.fuego}</span> - <span class="text-slate-600 text-sm">${p.marca} (${p.medida})</span>
+                                <p class="text-xs text-slate-500 mt-0.5">Sulco Atual: <b class="text-lprosp-red">${p.sulcoAtual} mm</b></p>
                             </div>
-                            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-lprosp-red/10 text-lprosp-red border border-lprosp-red/20">Atenção Imediata</span>
+                            <span class="px-3 py-1 rounded-lg text-xs font-bold font-heading bg-lprosp-red text-white uppercase tracking-wider">Atenção Imediata</span>
                         </div>
                     `).join('')}
                 </div>
@@ -83,63 +75,61 @@ function renderDashboard(container) {
 }
 
 // ----------------------------------------------------
-// 2. GESTÃO DE CARRETAS (ESQUEMA VISUAL DO PÁTIO)
+// 2. GESTÃO DE CARRETAS
 // ----------------------------------------------------
 function renderCarretasView(container) {
     const carretas = DB.get('carretas');
     const pneus = DB.get('pneus');
 
     container.innerHTML = `
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             ${carretas.map(carreta => {
                 const pneusDaCarreta = pneus.filter(p => p.carretaId === carreta.id);
                 return `
-                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex flex-col justify-between">
-                        <div>
-                            <div class="flex justify-between items-start mb-6">
-                                <div>
-                                    <h3 class="text-xl font-bold text-white">${carreta.placa}</h3>
-                                    <p class="text-sm text-zinc-400">${carreta.modelo} • ${carreta.kmAtual.toLocaleString()} KM</p>
-                                </div>
-                                <span class="bg-lprosp-blue/10 text-lprosp-blue border border-lprosp-blue/20 text-xs px-3 py-1 rounded-full font-medium">
-                                    ${carreta.eixos} Eixos
-                                </span>
+                    <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                        <div class="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-800 font-heading">${carreta.placa}</h3>
+                                <p class="text-xs text-slate-500">${carreta.modelo} • ${carreta.kmAtual.toLocaleString()} KM</p>
                             </div>
+                            <span class="bg-lprosp-blue-light text-lprosp-blue border border-lprosp-blue/20 text-xs px-3 py-1 rounded-lg font-bold font-heading">
+                                ${carreta.eixos} EIXOS
+                            </span>
+                        </div>
 
-                            <!-- Esquema Visual da Carreta -->
-                            <div class="bg-zinc-950 p-6 rounded-2xl border border-zinc-800/80 my-4 flex flex-col items-center gap-6">
-                                <div class="text-xs text-zinc-500 uppercase tracking-widest font-semibold">Frente da Carreta</div>
-                                
-                                ${[1, 2, 3].slice(0, carreta.eixos).map(eixo => {
-                                    const posEsquerda = `E${eixo}E`;
-                                    const posDireita = `E${eixo}D`;
-                                    const pneuE = pneusDaCarreta.find(p => p.posicao === posEsquerda);
-                                    const pneuD = pneusDaCarreta.find(p => p.posicao === posDireita);
+                        <!-- Esquema Visual da Carreta -->
+                        <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 my-2 flex flex-col items-center gap-4">
+                            <div class="text-[10px] text-slate-400 font-bold font-heading uppercase tracking-widest">Frente da Carreta</div>
+                            
+                            ${[1, 2, 3].slice(0, carreta.eixos).map(eixo => {
+                                const posEsquerda = `E${eixo}E`;
+                                const posDireita = `E${eixo}D`;
+                                const pneuE = pneusDaCarreta.find(p => p.posicao === posEsquerda);
+                                const pneuD = pneusDaCarreta.find(p => p.posicao === posDireita);
 
-                                    return `
-                                        <div class="flex items-center justify-center gap-8 w-full">
-                                            <!-- Pneu Esquerdo -->
-                                            <button onclick="handleSlotClick('${carreta.id}', '${posEsquerda}')" 
-                                                class="w-24 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold
-                                                ${pneuE ? (pneuE.sulcoAtual <= 3 ? 'bg-red-950/40 border-lprosp-red/50 text-red-300' : 'bg-lprosp-blue/10 border-lprosp-blue/50 text-lprosp-blue') : 'bg-zinc-900 border-dashed border-zinc-700 text-zinc-500 hover:border-zinc-500'}">
-                                                <span>${pneuE ? pneuE.fuego : '+ Montar'}</span>
-                                                <span class="text-[10px] opacity-75">${pneuE ? `${pneuE.sulcoAtual}mm` : posEsquerda}</span>
-                                            </button>
+                                return `
+                                    <div class="flex items-center justify-center gap-6 w-full">
+                                        <!-- Pneu Esquerdo -->
+                                        <button onclick="handleSlotClick('${carreta.id}', '${posEsquerda}')" 
+                                            class="w-28 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold shadow-sm
+                                            ${pneuE ? (pneuE.sulcoAtual <= 3 ? 'bg-red-50 border-lprosp-red text-lprosp-red' : 'bg-blue-50 border-lprosp-blue text-lprosp-blue') : 'bg-white border-dashed border-slate-300 text-slate-400 hover:border-slate-400'}">
+                                            <span class="font-bold">${pneuE ? pneuE.fuego : '+ Montar'}</span>
+                                            <span class="text-[10px] opacity-75">${pneuE ? `${pneuE.sulcoAtual}mm` : posEsquerda}</span>
+                                        </button>
 
-                                            <!-- Eixo -->
-                                            <div class="h-2 flex-1 bg-zinc-800 rounded-full"></div>
+                                        <!-- Eixo -->
+                                        <div class="h-2 flex-1 bg-slate-300 rounded-full"></div>
 
-                                            <!-- Pneu Direito -->
-                                            <button onclick="handleSlotClick('${carreta.id}', '${posDireita}')" 
-                                                class="w-24 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold
-                                                ${pneuD ? (pneuD.sulcoAtual <= 3 ? 'bg-red-950/40 border-lprosp-red/50 text-red-300' : 'bg-lprosp-blue/10 border-lprosp-blue/50 text-lprosp-blue') : 'bg-zinc-900 border-dashed border-zinc-700 text-zinc-500 hover:border-zinc-500'}">
-                                                <span>${pneuD ? pneuD.fuego : '+ Montar'}</span>
-                                                <span class="text-[10px] opacity-75">${pneuD ? `${pneuD.sulcoAtual}mm` : posDireita}</span>
-                                            </button>
-                                        </div>
-                                    `;
-                                }).join('')}
-                            </div>
+                                        <!-- Pneu Direito -->
+                                        <button onclick="handleSlotClick('${carreta.id}', '${posDireita}')" 
+                                            class="w-28 h-12 rounded-lg border flex flex-col items-center justify-center transition text-xs font-semibold shadow-sm
+                                            ${pneuD ? (pneuD.sulcoAtual <= 3 ? 'bg-red-50 border-lprosp-red text-lprosp-red' : 'bg-blue-50 border-lprosp-blue text-lprosp-blue') : 'bg-white border-dashed border-slate-300 text-slate-400 hover:border-slate-400'}">
+                                            <span class="font-bold">${pneuD ? pneuD.fuego : '+ Montar'}</span>
+                                            <span class="text-[10px] opacity-75">${pneuD ? `${pneuD.sulcoAtual}mm` : posDireita}</span>
+                                        </button>
+                                    </div>
+                                `;
+                            }).join('')}
                         </div>
                     </div>
                 `;
@@ -167,20 +157,20 @@ function showMontarModal(carretaId, posicao) {
 
     openModal(`
         <div class="p-6">
-            <h3 class="text-xl font-bold mb-1">Montar Pneu na Posição ${posicao}</h3>
-            <p class="text-sm text-zinc-400 mb-6">Selecione um pneu do estoque para instalar.</p>
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-1">Montar Pneu na Posição ${posicao}</h3>
+            <p class="text-xs text-slate-500 mb-4">Selecione um pneu do estoque para instalar.</p>
             
-            ${pneusDisponiveis.length === 0 ? '<p class="text-lprosp-red text-sm">Nenhum pneu disponível no estoque.</p>' : `
+            ${pneusDisponiveis.length === 0 ? '<p class="text-lprosp-red text-xs italic">Nenhum pneu disponível no estoque.</p>' : `
                 <form onsubmit="confirmarMontagem(event, '${carretaId}', '${posicao}')" class="space-y-4">
                     <div>
-                        <label class="block text-xs font-medium text-zinc-400 mb-1">Pneu</label>
-                        <select id="montar-pneu-id" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm" required>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">SELECIONE O PNEU</label>
+                        <select id="montar-pneu-id" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
                             ${pneusDisponiveis.map(p => `<option value="${p.id}">${p.fuego} - ${p.marca} (${p.sulcoAtual}mm)</option>`).join('')}
                         </select>
                     </div>
-                    <div class="flex justify-end gap-3 mt-6">
-                        <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm">Cancelar</button>
-                        <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue hover:bg-lprosp-blue-hover text-white font-medium text-sm">Instalar Pneu</button>
+                    <div class="flex justify-end gap-2 mt-6">
+                        <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
+                        <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue hover:bg-lprosp-blue-dark text-white text-xs font-bold font-heading">INSTALAR PNEU</button>
                     </div>
                 </form>
             `}
@@ -208,25 +198,25 @@ function confirmarMontagem(e, carretaId, posicao) {
 function showDesmontarModal(pneu) {
     openModal(`
         <div class="p-6">
-            <h3 class="text-xl font-bold mb-1">Desmontar Pneu ${pneu.fuego}</h3>
-            <p class="text-sm text-zinc-400 mb-6">Informe o sulco medido e o destino do pneu.</p>
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-1">Desmontar Pneu ${pneu.fuego}</h3>
+            <p class="text-xs text-slate-500 mb-4">Informe o sulco medido e o destino do pneu.</p>
 
             <form onsubmit="confirmarDesmontagem(event, '${pneu.id}')" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-medium text-zinc-400 mb-1">Medição de Sulco Atual (mm)</label>
-                    <input type="number" step="0.1" id="desmontar-sulco" value="${pneu.sulcoAtual}" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm" required>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">MEDIÇÃO DE SULCO ATUAL (MM)</label>
+                    <input type="number" step="0.1" id="desmontar-sulco" value="${pneu.sulcoAtual}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-zinc-400 mb-1">Destino do Pneu</label>
-                    <select id="desmontar-destino" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm">
+                    <label class="block text-xs font-bold text-slate-600 mb-1">DESTINO DO PNEU</label>
+                    <select id="desmontar-destino" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue">
                         <option value="Estoque">Retornar ao Estoque</option>
                         <option value="Reforma">Enviar para Reforma / Recape</option>
                         <option value="Descartado">Descarte / Sucata</option>
                     </select>
                 </div>
-                <div class="flex justify-end gap-3 mt-6">
-                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm">Cancelar</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-red hover:opacity-90 font-medium text-sm text-white">Confirmar Desmontagem</button>
+                <div class="flex justify-end gap-2 mt-6">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-red hover:bg-lprosp-red-hover text-white text-xs font-bold font-heading">CONFIRMAR DESMONTAGEM</button>
                 </div>
             </form>
         </div>
@@ -259,35 +249,35 @@ function confirmarDesmontagem(e, pneuId) {
 function showAddTireModal() {
     openModal(`
         <div class="p-6">
-            <h3 class="text-xl font-bold mb-4">Cadastrar Novo Pneu</h3>
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">CADASTRAR NOVO PNEU</h3>
             <form onsubmit="cadastrarPneu(event)" class="space-y-4">
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-xs font-medium text-zinc-400 mb-1">Nº de Fogo</label>
-                        <input type="text" id="pneu-fuego" placeholder="Ex: P-102" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm" required>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE FOGO</label>
+                        <input type="text" id="pneu-fuego" placeholder="Ex: P-102" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-zinc-400 mb-1">Marca</label>
-                        <input type="text" id="pneu-marca" placeholder="Ex: Michelin" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm" required>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">MARCA</label>
+                        <input type="text" id="pneu-marca" placeholder="Ex: Michelin" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
                     </div>
                 </div>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-xs font-medium text-zinc-400 mb-1">Medida</label>
-                        <input type="text" id="pneu-medida" value="295/80 R22.5" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm" required>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">MEDIDA</label>
+                        <input type="text" id="pneu-medida" value="295/80 R22.5" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-zinc-400 mb-1">Sulco Novo (mm)</label>
-                        <input type="number" step="0.1" id="pneu-sulco" value="15" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm" required>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">SULCO NOVO (MM)</label>
+                        <input type="number" step="0.1" id="pneu-sulco" value="15" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
                     </div>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-zinc-400 mb-1">Valor de Compra (R$)</label>
-                    <input type="number" id="pneu-valor" placeholder="2200" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm" required>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">VALOR DE COMPRA (R$)</label>
+                    <input type="number" id="pneu-valor" placeholder="2200" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-lprosp-blue" required>
                 </div>
-                <div class="flex justify-end gap-3 mt-6">
-                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-zinc-800 text-sm">Cancelar</button>
-                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue hover:bg-lprosp-blue-hover text-white font-medium text-sm">Salvar Pneu</button>
+                <div class="flex justify-end gap-2 mt-6">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-blue hover:bg-lprosp-blue-dark text-white text-xs font-bold font-heading">SALVAR PNEU</button>
                 </div>
             </form>
         </div>
