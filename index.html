@@ -9,11 +9,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <!-- Firebase SDKs (v10 - Realtime Database) -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, onValue, set, push, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+    <!-- Firebase App e Realtime Database (Versão Compatível/Universal) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
+    <script>
         // Suas configurações do Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyCZgTUEIJFu9CcXI9-ppRmS0z-P3pQfscQ",
@@ -26,17 +26,9 @@
             measurementId: "G-JXGYQQ8S0E"
         };
 
-        // Inicializa o Firebase e o Realtime Database
-        const app = initializeApp(firebaseConfig);
-        const rtdb = getDatabase(app);
-
-        // Exporta para o window para o app.js utilizar
-        window.rtdb = rtdb;
-        window.dbRef = ref;
-        window.dbOnValue = onValue;
-        window.dbSet = set;
-        window.dbPush = push;
-        window.dbUpdate = update;
+        // Inicialização global do Firebase
+        firebase.initializeApp(firebaseConfig);
+        window.rtdb = firebase.database();
     </script>
 
     <script>
