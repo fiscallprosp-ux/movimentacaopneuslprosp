@@ -50,6 +50,9 @@ document.addEventListener('DOMContentLoaded', () => {
             renderLoginView();
         }
     });
+
+    // Vincula automaticamente eventos de clique caso os botões existam na interface
+    vincularEventosNavegacao();
 });
 
 function initRealtimeListeners() {
@@ -107,7 +110,6 @@ function handleLogin(e) {
     e.preventDefault();
     let userInput = document.getElementById('login-username').value.trim().toLowerCase();
     const password = document.getElementById('login-password').value;
-
     let emailFinal = userInput.includes('@') ? userInput : `${userInput}@lprosp.com`;
 
     window.auth.signInWithEmailAndPassword(emailFinal, password)
@@ -120,7 +122,7 @@ function handleLogout() {
 }
 
 // ====================================================
-// NAVEGAÇÃO & PAINEL SUPERIOR
+// NAVEGAÇÃO & PAINEL SUPERIOR (CORRIGIDO E ROBUSTO)
 // ====================================================
 function updateQuickStats() {
     const elUso = document.getElementById('stat-em-uso');
@@ -135,21 +137,30 @@ function updateQuickStats() {
 function switchTab(tab) {
     state.currentTab = tab;
     
-    // Atualiza visualmente os botões de aba no topo (se existirem)
-    const btnPatio = document.getElementById('nav-btn-patio');
-    const btnEstoque = document.getElementById('nav-btn-estoque');
-    
-    if (btnPatio && btnEstoque) {
-        if (tab === 'veiculos') {
-            btnPatio.className = "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md transition";
-            btnEstoque.className = "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-400 hover:text-white transition";
-        } else {
-            btnEstoque.className = "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md transition";
-            btnPatio.className = "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-400 hover:text-white transition";
+    // Procura por ID ou por texto/conteúdo nos botões do cabeçalho superior para garantir o destaque visual
+    const botoes = document.querySelectorAll('button, div[onclick*="switchTab"]');
+    botoes.forEach(btn => {
+        const onclickAttr = btn.getAttribute('onclick') || '';
+        if (onclickAttr.includes(tab)) {
+            btn.classList.remove('bg-slate-800', 'text-slate-400');
+            btn.classList.add('bg-blue-600', 'text-white', 'shadow-md');
+        } else if (onclickAttr.includes('switchTab')) {
+            btn.classList.remove('bg-blue-600', 'text-white', 'shadow-md');
+            btn.classList.add('bg-slate-800', 'text-slate-400');
         }
-    }
+    });
 
     renderApp();
+}
+
+function vincularEventosNavegacao() {
+    // Garante que o botão "Nova Carreta" / "+ Novo Veículo" funcione globalmente
+    document.querySelectorAll('button').forEach(btn => {
+        const texto = btn.innerText.toLowerCase();
+        if (texto.includes('nova carreta') || texto.includes('novo veículo') || texto.includes('novo veiculo')) {
+            btn.onclick = () => showAddVeiculoModal();
+        }
+    });
 }
 
 function handleSearch(term) {
@@ -167,6 +178,7 @@ function renderApp() {
     } else {
         renderPneusView(container);
     }
+    vincularEventosNavegacao();
 }
 
 // ====================================================
@@ -189,7 +201,7 @@ function getPosicoesEixo(tipoVeiculo, numeroEixo) {
 }
 
 // ====================================================
-// VISÃO DE VEÍCULOS (DIAGRAMA DE CHASSIS VERTICAL)
+// VISÃO DE VEÍCULOS
 // ====================================================
 function renderVeiculosView(container) {
     const veiculosFiltrados = state.veiculos.filter(v => 
@@ -201,10 +213,9 @@ function renderVeiculosView(container) {
 
     container.innerHTML = `
         <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
-            
             <div class="xl:col-span-8 space-y-6">
                 
-                <!-- BARRA SUPORTE DRAG & DROP PARA DESMONTAGEM -->
+                <!-- BARRA DRAG & DROP -->
                 <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm grid grid-cols-3 gap-3">
                     <div ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToZone(event, 'Estoque')" 
                          class="border-2 border-dashed border-slate-300 rounded-xl p-3 text-center flex flex-col items-center justify-center bg-slate-50 hover:bg-blue-50 transition cursor-pointer">
@@ -241,8 +252,6 @@ function renderVeiculosView(container) {
 
                     return `
                         <div class="bg-[#12161f] border border-slate-800 rounded-2xl p-6 text-white shadow-xl relative">
-                            
-                            <!-- CABEÇALHO DO VEÍCULO -->
                             <div class="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
                                 <div class="flex items-center gap-3">
                                     <span class="bg-blue-600 text-white font-black px-3 py-1 rounded-lg text-sm tracking-wider uppercase">
@@ -258,10 +267,7 @@ function renderVeiculosView(container) {
                                 </button>
                             </div>
 
-                            <!-- CHASSIS VERTICAL COM EIXOS -->
                             <div class="relative max-w-lg mx-auto py-4">
-                                
-                                <!-- PLACA BRASIL SUPERIOR -->
                                 <div class="flex justify-center mb-6">
                                     <div class="bg-white text-slate-900 border-2 border-blue-600 rounded-md px-4 py-0.5 text-xs font-black tracking-widest shadow flex items-center gap-1">
                                         <span class="text-[9px] bg-blue-700 text-white px-1 rounded-sm">BR</span>
@@ -269,10 +275,8 @@ function renderVeiculosView(container) {
                                     </div>
                                 </div>
 
-                                <!-- VIGA CENTRAL DO CHASSIS -->
                                 <div class="absolute left-1/2 top-14 bottom-14 -translate-x-1/2 w-10 border-x-2 border-slate-700 bg-slate-900/60 z-0"></div>
 
-                                <!-- EIXOS E RODAS -->
                                 <div class="space-y-12 relative z-10">
                                     ${Array.from({ length: qtdEixos }, (_, index) => index + 1).map(eixoNum => {
                                         const posicoes = getPosicoesEixo(tipo, eixoNum);
@@ -280,23 +284,17 @@ function renderVeiculosView(container) {
 
                                         return `
                                             <div class="relative flex items-center justify-between px-2">
-                                                <!-- EIXO DE AÇO TRANSVERSAL -->
                                                 <div class="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-2 bg-slate-700 -z-10"></div>
-
                                                 ${ehSimples ? `
-                                                    <!-- RODAGEM SIMPLES (EX: E1 DO CAVALO) -->
                                                     ${renderSlotPneu(veiculo.id, posicoes[0].pos, pneusDoVeiculo)}
                                                     <div class="text-[10px] font-bold text-slate-500 bg-[#12161f] px-2 font-mono">EIXO ${eixoNum}</div>
                                                     ${renderSlotPneu(veiculo.id, posicoes[1].pos, pneusDoVeiculo)}
                                                 ` : `
-                                                    <!-- RODAGEM DUPLA (PAR DE PNEUS DE CADA LADO) -->
                                                     <div class="flex gap-1.5">
                                                         ${renderSlotPneu(veiculo.id, posicoes[0].pos, pneusDoVeiculo)}
                                                         ${renderSlotPneu(veiculo.id, posicoes[1].pos, pneusDoVeiculo)}
                                                     </div>
-
                                                     <div class="text-[10px] font-bold text-slate-500 bg-[#12161f] px-2 font-mono">EIXO ${eixoNum}</div>
-
                                                     <div class="flex gap-1.5">
                                                         ${renderSlotPneu(veiculo.id, posicoes[2].pos, pneusDoVeiculo)}
                                                         ${renderSlotPneu(veiculo.id, posicoes[3].pos, pneusDoVeiculo)}
@@ -307,21 +305,18 @@ function renderVeiculosView(container) {
                                     }).join('')}
                                 </div>
 
-                                <!-- PLACA BRASIL INFERIOR -->
                                 <div class="flex justify-center mt-8">
                                     <div class="bg-white text-slate-900 border-2 border-blue-600 rounded-md px-4 py-0.5 text-xs font-black tracking-widest shadow flex items-center gap-1">
                                         <span class="text-[9px] bg-blue-700 text-white px-1 rounded-sm">BR</span>
                                         ${escapeHtml(veiculo.placa)}
                                     </div>
                                 </div>
-
                             </div>
                         </div>
                     `;
                 }).join('')}
             </div>
 
-            <!-- PAINEL LATERAL: ESTOQUE DE PNEUS PARA ARRASTAR -->
             <div class="xl:col-span-4">
                 <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm sticky top-6">
                     <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
@@ -345,22 +340,19 @@ function renderVeiculosView(container) {
                     </div>
                 </div>
             </div>
-
         </div>
     `;
 }
 
 // ====================================================
-// COMPONENTE DO SLOT DO PNEU NO EIXO
+// SLOT DO PNEU
 // ====================================================
 function renderSlotPneu(veiculoId, pos, pneusDoVeiculo) {
     const pneu = pneusDoVeiculo.find(p => p.posicao === pos);
-
     return `
         <div ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToSlot(event, '${veiculoId}', '${pos}')"
              class="w-12 h-20 rounded-lg border-2 ${pneu ? (pneu.sulcoAtual <= 3 ? 'border-red-500 bg-red-950/60' : 'border-blue-500 bg-blue-950/60') : 'border-dashed border-slate-700 bg-slate-800/40'} 
              flex flex-col items-center justify-center p-1 transition-all relative group cursor-pointer">
-            
             ${pneu ? `
                 <div draggable="true" ondragstart="handleDragStart(event, '${pneu.id}')" class="text-center w-full">
                     <span class="block font-black text-[11px] text-white leading-tight font-mono">${escapeHtml(pneu.fuego)}</span>
@@ -375,7 +367,7 @@ function renderSlotPneu(veiculoId, pos, pneusDoVeiculo) {
 }
 
 // ====================================================
-// LÓGICA DE DRAG & DROP
+// DRAG & DROP
 // ====================================================
 function handleDragStart(e, pneuId) {
     e.dataTransfer.setData('text/plain', pneuId);
@@ -393,7 +385,6 @@ function handleDragLeave(e) {
 function handleDropToSlot(e, veiculoId, posicao) {
     e.preventDefault();
     e.currentTarget.classList.remove('border-blue-400', 'scale-105');
-
     const pneuId = e.dataTransfer.getData('text/plain');
     if (!pneuId) return;
 
@@ -408,10 +399,7 @@ function handleDropToZone(e, destinoStatus) {
     e.preventDefault();
     const pneuId = e.dataTransfer.getData('text/plain');
     const pneu = state.pneus.find(p => p.id === pneuId);
-
-    if (pneu) {
-        showDesmontarModal(pneu, destinoStatus);
-    }
+    if (pneu) showDesmontarModal(pneu, destinoStatus);
 }
 
 function showDesmontarModal(pneu, destino) {
@@ -419,7 +407,6 @@ function showDesmontarModal(pneu, destino) {
         <div class="p-6">
             <h3 class="text-lg font-bold text-slate-800 mb-1">Mover Pneu ${escapeHtml(pneu.fuego)}</h3>
             <p class="text-xs text-slate-500 mb-4">Destino selecionado: <b class="text-blue-600">${destino}</b>. Atualize o sulco atual.</p>
-
             <form onsubmit="confirmarMovimentacao(event, '${pneu.id}', '${destino}')" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">SULCO MEDIDO (MM)</label>
@@ -437,7 +424,6 @@ function showDesmontarModal(pneu, destino) {
 function confirmarMovimentacao(e, pneuId, destino) {
     e.preventDefault();
     const sulco = parseFloat(document.getElementById('drag-sulco').value);
-
     window.rtdb.ref(`pneus/${pneuId}`).update({
         sulcoAtual: sulco,
         status: destino,
@@ -458,12 +444,12 @@ function filterEstoqueVisual(term) {
 }
 
 // ====================================================
-// MODAL DE VEÍCULO
+// MODAL DE VEÍCULO / NOVA CARRETA
 // ====================================================
 function showAddVeiculoModal() {
     openModal(`
         <div class="p-6">
-            <h3 class="text-lg font-bold text-slate-800 mb-4">Cadastrar Veículo</h3>
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Cadastrar Veículo / Carreta</h3>
             <form onsubmit="salvarVeiculo(event)" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">TIPO DE VEÍCULO</label>
@@ -527,7 +513,7 @@ function deletarVeiculo(id, placa) {
 }
 
 // ====================================================
-// VISÃO DE TABELA DE PNEUS & CADASTRO EM LOTE
+// VISÃO DE TABELA DE PNEUS
 // ====================================================
 function renderPneusView(container) {
     const pneusFiltrados = state.pneus.filter(p => 
@@ -543,7 +529,6 @@ function renderPneusView(container) {
                     + Cadastrar Pneus em Lote
                 </button>
             </div>
-            
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-xs">
                     <thead class="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
