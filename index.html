@@ -15,7 +15,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
     <script>
-        // Suas configurações do Firebase
+        // Configurações do Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyCZgTUEIJFu9CcXI9-ppRmS0z-P3pQfscQ",
             authDomain: "controle-de-pneus-87e2e.firebaseapp.com",
@@ -75,8 +75,8 @@
 
             <form onsubmit="handleLogin(event)" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">E-MAIL</label>
-                    <input type="email" id="login-email" required class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs focus:outline-none focus:border-lprosp-blue">
+                    <label class="block text-xs font-bold text-slate-600 mb-1">USUÁRIO</label>
+                    <input type="text" id="login-email" required placeholder="Ex: lprosp" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs focus:outline-none focus:border-lprosp-blue">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">SENHA</label>
@@ -106,11 +106,11 @@
             </div>
 
             <div class="flex items-center gap-3">
-                <button onclick="showAddTireModal()" class="flex items-center gap-2 bg-lprosp-blue text-white hover:bg-lprosp-blue-dark px-4 py-2.5 rounded-xl text-xs font-bold font-heading transition shadow-sm">
+                <button onclick="showAddTireModal()" class="btn-admin flex items-center gap-2 bg-lprosp-blue text-white hover:bg-lprosp-blue-dark px-4 py-2.5 rounded-xl text-xs font-bold font-heading transition shadow-sm">
                     <i class="fas fa-plus"></i>
                     <span>+ ADICIONAR PNEU</span>
                 </button>
-                <button onclick="showAddCarretaModal()" class="flex items-center gap-2 bg-lprosp-red text-white hover:bg-lprosp-red-hover px-4 py-2.5 rounded-xl text-xs font-bold font-heading transition shadow-sm">
+                <button onclick="showAddCarretaModal()" class="btn-admin flex items-center gap-2 bg-lprosp-red text-white hover:bg-lprosp-red-hover px-4 py-2.5 rounded-xl text-xs font-bold font-heading transition shadow-sm">
                     <i class="fas fa-truck-front"></i>
                     <span>+ NOVA CARRETA</span>
                 </button>
