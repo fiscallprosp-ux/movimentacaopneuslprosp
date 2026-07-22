@@ -8,6 +8,38 @@
     <link rel="icon" type="image/jpeg" href="logo.jpg">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Firebase SDKs (v10 Modular) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, onSnapshot, doc, setDoc, updateDoc, addDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Configurações do seu projeto do Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCZgTUEIJFu9CcXI9-ppRmS0z-P3pQfscQ",
+            authDomain: "controle-de-pneus-87e2e.firebaseapp.com",
+            databaseURL: "https://controle-de-pneus-87e2e-default-rtdb.firebaseio.com",
+            projectId: "controle-de-pneus-87e2e",
+            storageBucket: "controle-de-pneus-87e2e.firebasestorage.app",
+            messagingSenderId: "623395771332",
+            appId: "1:623395771332:web:97f0a9c7959278e61fca91",
+            measurementId: "G-JXGYQQ8S0E"
+        };
+
+        // Inicializa o Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Exporta para o escopo global do navegador
+        window.fbDB = db;
+        window.fbCollection = collection;
+        window.fbOnSnapshot = onSnapshot;
+        window.fbDoc = doc;
+        window.fbSetDoc = setDoc;
+        window.fbUpdateDoc = updateDoc;
+        window.fbAddDoc = addDoc;
+    </script>
+
     <script>
         tailwind.config = {
             theme: {
@@ -19,8 +51,7 @@
                             'blue-light': '#f0f4f8',
                             red: '#dc2626',
                             'red-hover': '#b91c1c',
-                            green: '#16a34a',
-                            bg: '#f8fafc'
+                            green: '#16a34a'
                         }
                     }
                 }
@@ -30,29 +61,29 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Roboto:wght@400;500;700&display=swap');
         body { font-family: 'Roboto', sans-serif; background-color: #f1f5f9; }
-        h1, h2, h3, .font-heading { font-family: 'Oswald', sans-serif; text-transform: uppercase; tracking: 0.05em; }
+        h1, h2, h3, .font-heading { font-family: 'Oswald', sans-serif; text-transform: uppercase; }
     </style>
 </head>
 <body class="text-slate-800 min-h-screen flex flex-col">
 
-    <!-- Top Header Bar (Linha Vermelha de Detalhe) -->
+    <!-- Detalhe superior em vermelho -->
     <div class="h-2 bg-lprosp-red w-full"></div>
 
-    <!-- Container Principal com margens -->
     <div class="max-w-7xl mx-auto w-full px-4 py-6 flex-1 flex flex-col gap-6">
 
-        <!-- Banner Superior / Header -->
+        <!-- Banner Superior / Cabeçalho Clara -->
         <header class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
-            <!-- Logo e Título -->
             <div class="flex items-center gap-6">
                 <img src="logo.jpg" alt="L-PROSP" class="h-16 object-contain">
                 <div class="border-l border-slate-200 pl-6">
-                    <h1 class="text-2xl font-bold text-lprosp-blue-dark tracking-wide">GESTAO DE PNEUS E CARRETAS</h1>
-                    <p class="text-xs text-slate-500 font-medium">L-PROSP • Soluções que prosperam — Controle de frotas e desgaste de rodagem</p>
+                    <h1 class="text-2xl font-bold text-lprosp-blue-dark tracking-wide">GESTÃO DE PNEUS E CARRETAS</h1>
+                    <p class="text-xs text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
+                        L-PROSP • Cloud Database 
+                        <span class="inline-block w-2 h-2 rounded-full bg-lprosp-green animate-pulse"></span>
+                    </p>
                 </div>
             </div>
 
-            <!-- Botões de Ação do Topo -->
             <div class="flex items-center gap-3">
                 <button onclick="showAddTireModal()" 
                         class="flex items-center gap-2 bg-lprosp-blue text-white hover:bg-lprosp-blue-dark px-4 py-2.5 rounded-xl text-xs font-bold font-heading transition shadow-sm">
@@ -67,34 +98,28 @@
             </div>
         </header>
 
-        <!-- Navegação Principal por Abas -->
+        <!-- Navegação por Abas -->
         <div class="flex items-center justify-between gap-4 border-b border-slate-200 pb-2">
             <nav class="flex gap-2" id="sidebar-nav">
-                <button onclick="navigate('dashboard')" id="nav-dashboard" 
-                        class="px-6 py-2.5 rounded-xl text-sm font-bold font-heading transition shadow-sm bg-lprosp-blue text-white">
+                <button onclick="navigate('dashboard')" id="nav-dashboard" class="px-6 py-2.5 rounded-xl text-sm font-bold font-heading transition shadow-sm bg-lprosp-blue text-white">
                     DASHBOARD
                 </button>
-                <button onclick="navigate('carretas')" id="nav-carretas" 
-                        class="px-6 py-2.5 rounded-xl text-sm font-bold font-heading transition bg-white text-slate-600 hover:bg-slate-100 border border-slate-200">
+                <button onclick="navigate('carretas')" id="nav-carretas" class="px-6 py-2.5 rounded-xl text-sm font-bold font-heading transition bg-white text-slate-600 hover:bg-slate-100 border border-slate-200">
                     CARRETAS / PÁTIO
                 </button>
-                <button onclick="navigate('pneus')" id="nav-pneus" 
-                        class="px-6 py-2.5 rounded-xl text-sm font-bold font-heading transition bg-white text-slate-600 hover:bg-slate-100 border border-slate-200">
+                <button onclick="navigate('pneus')" id="nav-pneus" class="px-6 py-2.5 rounded-xl text-sm font-bold font-heading transition bg-white text-slate-600 hover:bg-slate-100 border border-slate-200">
                     ESTOQUE DE PNEUS
                 </button>
             </nav>
-
-            <!-- Campo de Busca -->
-            <div class="relative">
-                <input id="global-search" type="text" placeholder="Buscar fogo ou placa..." 
-                       class="bg-white border border-slate-300 rounded-xl py-2 px-4 pl-10 text-xs w-64 focus:outline-none focus:border-lprosp-blue transition shadow-sm">
-                <i class="fas fa-search absolute left-3.5 top-2.5 text-slate-400 text-xs"></i>
-            </div>
         </div>
 
-        <!-- Área de Conteúdo -->
-        <main class="flex-1" id="main-content"></main>
-
+        <!-- Área Dinâmica -->
+        <main class="flex-1" id="main-content">
+            <div class="text-center py-16 text-slate-400 font-heading tracking-wider flex flex-col items-center gap-2">
+                <i class="fas fa-spinner fa-spin text-2xl text-lprosp-blue"></i>
+                <span>CONECTANDO AO FIREBASE...</span>
+            </div>
+        </main>
     </div>
 
     <!-- Modal Base -->
@@ -102,7 +127,6 @@
         <div id="modal-content" class="bg-white border border-slate-200 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl"></div>
     </div>
 
-    <script src="js/db.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
