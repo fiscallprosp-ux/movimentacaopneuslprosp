@@ -114,7 +114,21 @@ function handleLogin(e) {
 
     window.auth.signInWithEmailAndPassword(emailFinal, password)
         .then(() => showToast("Acesso liberado!", "success"))
-        .catch(err => showToast("Erro de acesso: " + err.message, "error"));
+        .catch(err => showToast("Erro de acesso: " + traduzirErroAuth(err), "error"));
+}
+
+// Traduz os códigos de erro mais comuns do Firebase Auth para mensagens em português
+function traduzirErroAuth(err) {
+    const mensagens = {
+        'auth/invalid-credential': 'usuário ou senha incorretos.',
+        'auth/invalid-email': 'usuário inválido.',
+        'auth/user-not-found': 'usuário não encontrado.',
+        'auth/wrong-password': 'senha incorreta.',
+        'auth/too-many-requests': 'muitas tentativas. Aguarde um momento e tente novamente.',
+        'auth/network-request-failed': 'falha de conexão. Verifique sua internet.',
+        'auth/user-disabled': 'este usuário foi desativado.'
+    };
+    return mensagens[err.code] || err.message;
 }
 
 function handleLogout() {
@@ -163,9 +177,13 @@ function vincularEventosNavegacao() {
     });
 }
 
+let searchDebounceTimer = null;
 function handleSearch(term) {
-    state.searchTerm = term;
-    renderApp();
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+        state.searchTerm = term;
+        renderApp();
+    }, 250);
 }
 
 function renderApp() {
@@ -499,6 +517,12 @@ function salvarVeiculo(e) {
     const modelo = document.getElementById('veiculo-modelo').value.trim();
     const eixos = parseInt(document.getElementById('veiculo-eixos').value);
 
+    const jaExiste = state.veiculos.some(v => v.placa === placa);
+    if (jaExiste) {
+        showToast(`Já existe um veículo cadastrado com a placa ${placa}!`, "error");
+        return;
+    }
+
     window.rtdb.ref('veiculos').push({
         tipo: tipo,
         placa: placa,
@@ -512,9 +536,20 @@ function salvarVeiculo(e) {
 }
 
 function deletarVeiculo(id, placa) {
-    if (confirm(`Confirma a exclusão do veículo ${placa}?`)) {
-        window.rtdb.ref(`veiculos/${id}`).remove()
-            .then(() => showToast("Veículo removido!", "success"));
+    if (confirm(`Confirma a exclusão do veículo ${placa}? Os pneus montados nele voltarão para o estoque.`)) {
+        // Devolve para o estoque todos os pneus que estavam montados neste veículo,
+        // evitando que fiquem "órfãos" (Em Uso apontando para um veiculoId inexistente)
+        const pneusDoVeiculo = state.pneus.filter(p => p.veiculoId === id);
+        const updates = {};
+        pneusDoVeiculo.forEach(p => {
+            updates[`pneus/${p.id}/status`] = 'Estoque';
+            updates[`pneus/${p.id}/veiculoId`] = null;
+            updates[`pneus/${p.id}/posicao`] = null;
+        });
+        updates[`veiculos/${id}`] = null;
+
+        window.rtdb.ref().update(updates)
+            .then(() => showToast("Veículo removido! Pneus retornaram ao estoque.", "success"));
     }
 }
 
@@ -609,7 +644,17 @@ function salvarPneusEmLote(e) {
     const medida = document.getElementById('pneu-medida').value;
     const sulco = parseFloat(document.getElementById('pneu-sulco').value);
 
-    const fuegos = fuegosRaw.split(/[\n,]+/).map(f => f.trim()).filter(f => f.length > 0);
+    const fuegosDigitados = fuegosRaw.split(/[\n,]+/).map(f => f.trim()).filter(f => f.length > 0);
+    const fuegosExistentes = new Set(state.pneus.map(p => p.fuego));
+
+    const fuegos = fuegosDigitados.filter(f => !fuegosExistentes.has(f));
+    const duplicados = fuegosDigitados.filter(f => fuegosExistentes.has(f));
+
+    if (fuegos.length === 0) {
+        showToast(`Todos os números de fogo informados já existem: ${duplicados.join(', ')}`, "error");
+        return;
+    }
+
     const updates = {};
 
     fuegos.forEach(fuego => {
@@ -627,13 +672,16 @@ function salvarPneusEmLote(e) {
 
     window.rtdb.ref().update(updates).then(() => {
         closeModal();
-        showToast(`${fuegos.length} pneu(s) cadastrado(s)!`, "success");
+        let msg = `${fuegos.length} pneu(s) cadastrado(s)!`;
+        if (duplicados.length > 0) msg += ` (${duplicados.length} ignorado(s) por já existir: ${duplicados.join(', ')})`;
+        showToast(msg, "success");
     });
 }
 
 function deletarPneu(id) {
     if (confirm(`Confirma excluir este pneu?`)) {
-        window.rtdb.ref(`pneus/${id}`).remove();
+        window.rtdb.ref(`pneus/${id}`).remove()
+            .then(() => showToast("Pneu removido!", "success"));
     }
 }
 
