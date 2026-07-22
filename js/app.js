@@ -25,7 +25,7 @@ const state = {
     user: null,
     veiculos: [],
     pneus: [],
-    currentTab: 'carretas', // Padronizado para 'carretas' conforme o HTML
+    currentTab: 'carretas',
     searchTerm: ''
 };
 
@@ -68,7 +68,7 @@ function initRealtimeListeners() {
 }
 
 // ====================================================
-// LOGIN & LOGOUT
+// LOGIN & LOGOUT (Corrigido e Segregado)
 // ====================================================
 function renderLoginView() {
     const container = document.getElementById('main-container');
@@ -87,7 +87,7 @@ function renderLoginView() {
             <form onsubmit="handleLogin(event)" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-300 mb-1">USUÁRIO</label>
-                    <input type="text" id="login-username" placeholder="lprosp ou lurian" required 
+                    <input type="text" id="login-username" placeholder="Digite seu usuário ou e-mail" required 
                            class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500">
                 </div>
                 <div>
@@ -134,7 +134,6 @@ function updateQuickStats() {
 function switchTab(tab) {
     state.currentTab = tab;
     
-    // Atualização correta das classes visuais das abas no HTML
     const btnCarretas = document.getElementById('tab-carretas');
     const btnPneus = document.getElementById('tab-pneus');
 
@@ -202,7 +201,6 @@ function renderVeiculosView(container) {
         <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
             <div class="xl:col-span-8 space-y-6">
                 
-                <!-- BARRA DRAG & DROP -->
                 <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm grid grid-cols-3 gap-3">
                     <div ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToZone(event, 'Estoque')" 
                          class="border-2 border-dashed border-slate-300 rounded-xl p-3 text-center flex flex-col items-center justify-center bg-slate-50 hover:bg-blue-50 transition cursor-pointer">
@@ -375,19 +373,16 @@ function handleDropToSlot(e, veiculoId, posicao) {
     const pneuId = e.dataTransfer.getData('text/plain');
     if (!pneuId) return;
 
-    // Verifica se já existe um pneu alocado nesta exata posição do veículo
     const pneuExistenteNoSlot = state.pneus.find(p => p.veiculoId === veiculoId && p.posicao === posicao);
 
     const updates = {};
     
-    // Se houver um pneu ocupando o slot, mandamos ele de volta para o 'Estoque' de forma segura
     if (pneuExistenteNoSlot && pneuExistenteNoSlot.id !== pneuId) {
         updates[`pneus/${pneuExistenteNoSlot.id}/status`] = 'Estoque';
         updates[`pneus/${pneuExistenteNoSlot.id}/veiculoId`] = null;
         updates[`pneus/${pneuExistenteNoSlot.id}/posicao`] = null;
     }
 
-    // Aloca o novo pneu na posição desejada
     updates[`pneus/${pneuId}/status`] = 'Em Uso';
     updates[`pneus/${pneuId}/veiculoId`] = veiculoId;
     updates[`pneus/${pneuId}/posicao`] = posicao;
@@ -446,7 +441,7 @@ function filterEstoqueVisual(term) {
 }
 
 // ====================================================
-// MODAL DE VEÍCULO / NOVA CARRETA (Alias unificado resolvido)
+// MODAL DE VEÍCULO / NOVA CARRETA (Alias unificado)
 // ====================================================
 function showAddCarretaModal() {
     showAddVeiculoModal();
@@ -513,7 +508,6 @@ function salvarVeiculo(e) {
 
 function deletarVeiculo(id, placa) {
     if (confirm(`Confirma a exclusão do veículo ${placa}? Todos os pneus alocados nele serão retornados ao estoque.`)) {
-        // Retorna pneus associados ao estoque antes de excluir a carreta/veículo
         const updates = {};
         state.pneus.filter(p => p.veiculoId === id).forEach(p => {
             updates[`pneus/${p.id}/status`] = 'Estoque';
@@ -620,7 +614,6 @@ function salvarPneusEmLote(e) {
 
     const fuegos = fuegosRaw.split(/[\n,]+/).map(f => f.trim()).filter(f => f.length > 0);
     
-    // Validação de Duplicidade de Número de Fogo no Banco Atual
     const fuegosExistentes = new Set(state.pneus.map(p => p.fuego));
     const fuegosDuplicados = fuegos.filter(f => fuegosExistentes.has(f));
 
