@@ -5,31 +5,26 @@ let state = {
 };
 
 // ----------------------------------------------------
-// SINCRONIZAÇÃO COM O REALTIME DATABASE
+// SINCRONIZAÇÃO EM TEMPO REAL
 // ----------------------------------------------------
-window.addEventListener('DOMContentLoaded', () => {
-    const checkFirebase = setInterval(() => {
-        if (window.rtdb) {
-            clearInterval(checkFirebase);
-            initRealtimeSync();
-        }
-    }, 100);
+document.addEventListener('DOMContentLoaded', () => {
+    initRealtimeSync();
 });
 
 function initRealtimeSync() {
-    // Escuta Pneus em tempo real
-    window.dbOnValue(window.dbRef(window.rtdb, 'pneus'), (snapshot) => {
+    // Escuta Pneus
+    window.rtdb.ref('pneus').on('value', (snapshot) => {
         const data = snapshot.val();
         state.pneus = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
         renderPage();
     });
 
-    // Escuta Carretas em tempo real
-    window.dbOnValue(window.dbRef(window.rtdb, 'carretas'), (snapshot) => {
+    // Escuta Carretas
+    window.rtdb.ref('carretas').on('value', (snapshot) => {
         const data = snapshot.val();
         state.carretas = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
 
-        // Adiciona carretas iniciais se o banco estiver 100% vazio
+        // Adiciona carretas de demonstração na primeira execução
         if (state.carretas.length === 0 && !data) {
             seedInitialData();
         } else {
@@ -38,10 +33,9 @@ function initRealtimeSync() {
     });
 }
 
-async function seedInitialData() {
-    const carretasRef = window.dbRef(window.rtdb, 'carretas');
-    await window.dbPush(carretasRef, { placa: 'ABC-1234', modelo: '3 Eixos Standard', kmAtual: 145000, eixos: 3 });
-    await window.dbPush(carretasRef, { placa: 'XYZ-9876', modelo: 'Vanderléia 3 Eixos', kmAtual: 92000, eixos: 3 });
+function seedInitialData() {
+    window.rtdb.ref('carretas').push({ placa: 'ABC-1234', modelo: '3 Eixos Standard', kmAtual: 145000, eixos: 3 });
+    window.rtdb.ref('carretas').push({ placa: 'XYZ-9876', modelo: 'Vanderléia 3 Eixos', kmAtual: 92000, eixos: 3 });
 }
 
 // ----------------------------------------------------
@@ -63,6 +57,8 @@ function navigate(page) {
 
 function renderPage() {
     const main = document.getElementById('main-content');
+    if (!main) return;
+
     if (currentPage === 'dashboard') renderDashboard(main);
     if (currentPage === 'carretas') renderCarretasView(main);
     if (currentPage === 'pneus') renderPneusView(main);
@@ -175,7 +171,47 @@ function renderCarretasView(container) {
 }
 
 // ----------------------------------------------------
-// 3. AÇÕES (MONTAGEM / DESMONTAGEM / CADASTRO)
+// 3. ESTOQUE DE PNEUS
+// ----------------------------------------------------
+function renderPneusView(container) {
+    container.innerHTML = `
+        <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">TODOS OS PNEUS</h3>
+            ${state.pneus.length === 0 ? '<p class="text-slate-400 text-xs italic">Nenhum pneu cadastrado.</p>' : `
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs text-slate-600">
+                        <thead class="bg-slate-50 text-slate-500 font-heading border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">FOGO</th>
+                                <th class="p-3">MARCA / MEDIDA</th>
+                                <th class="p-3">SULCO ATUAL</th>
+                                <th class="p-3">STATUS</th>
+                                <th class="p-3">LOCALIZAÇÃO</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            ${state.pneus.map(p => {
+                                const carreta = state.carretas.find(c => c.id === p.carretaId);
+                                return `
+                                    <tr>
+                                        <td class="p-3 font-bold text-slate-800">${p.fuego}</td>
+                                        <td class="p-3">${p.marca} (${p.medida})</td>
+                                        <td class="p-3 font-bold ${p.sulcoAtual <= 3 ? 'text-lprosp-red' : 'text-slate-800'}">${p.sulcoAtual} mm</td>
+                                        <td class="p-3"><span class="px-2 py-1 rounded text-[10px] font-bold ${p.status === 'Em Uso' ? 'bg-blue-100 text-lprosp-blue' : 'bg-emerald-100 text-lprosp-green'}">${p.status}</span></td>
+                                        <td class="p-3 text-slate-500">${carreta ? `${carreta.placa} (${p.posicao})` : 'Estoque Central'}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `}
+        </div>
+    `;
+}
+
+// ----------------------------------------------------
+// 4. AÇÕES (MONTAGEM / DESMONTAGEM / CADASTRO)
 // ----------------------------------------------------
 function handleSlotClick(carretaId, posicao) {
     const pneuInstalado = state.pneus.find(p => p.carretaId === carretaId && p.posicao === posicao);
@@ -212,12 +248,11 @@ function showMontarModal(carretaId, posicao) {
     `);
 }
 
-async function confirmarMontagem(e, carretaId, posicao) {
+function confirmarMontagem(e, carretaId, posicao) {
     e.preventDefault();
     const pneuId = document.getElementById('montar-pneu-id').value;
 
-    const pneuRef = window.dbRef(window.rtdb, `pneus/${pneuId}`);
-    await window.dbUpdate(pneuRef, {
+    window.rtdb.ref(`pneus/${pneuId}`).update({
         status: 'Em Uso',
         carretaId: carretaId,
         posicao: posicao
@@ -254,13 +289,12 @@ function showDesmontarModal(pneu) {
     `);
 }
 
-async function confirmarDesmontagem(e, pneuId) {
+function confirmarDesmontagem(e, pneuId) {
     e.preventDefault();
     const sulco = parseFloat(document.getElementById('desmontar-sulco').value);
     const destino = document.getElementById('desmontar-destino').value;
 
-    const pneuRef = window.dbRef(window.rtdb, `pneus/${pneuId}`);
-    await window.dbUpdate(pneuRef, {
+    window.rtdb.ref(`pneus/${pneuId}`).update({
         sulcoAtual: sulco,
         status: destino,
         carretaId: null,
@@ -308,7 +342,7 @@ function showAddTireModal() {
     `);
 }
 
-async function cadastrarPneu(e) {
+function cadastrarPneu(e) {
     e.preventDefault();
 
     const novoPneu = {
@@ -324,9 +358,56 @@ async function cadastrarPneu(e) {
         kmRodados: 0
     };
 
-    const pneusRef = window.dbRef(window.rtdb, 'pneus');
-    await window.dbPush(pneusRef, novoPneu);
+    window.rtdb.ref('pneus').push(novoPneu);
+    closeModal();
+}
 
+function showAddCarretaModal() {
+    openModal(`
+        <div class="p-6">
+            <h3 class="text-lg font-bold font-heading text-slate-800 mb-4">CADASTRAR NOVA CARRETA</h3>
+            <form onsubmit="cadastrarCarreta(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">PLACA DA CARRETA</label>
+                    <input type="text" id="carreta-placa" placeholder="Ex: ABC-1234" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">MODELO</label>
+                    <input type="text" id="carreta-modelo" placeholder="Ex: Vanderléia 3 Eixos" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">QTD DE EIXOS</label>
+                        <select id="carreta-eixos" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs">
+                            <option value="2">2 Eixos</option>
+                            <option value="3" selected>3 Eixos</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL</label>
+                        <input type="number" id="carreta-km" value="0" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs" required>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-6">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold font-heading">CANCELAR</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-lprosp-red text-white text-xs font-bold font-heading">SALVAR CARRETA</button>
+                </div>
+            </form>
+        </div>
+    `);
+}
+
+function cadastrarCarreta(e) {
+    e.preventDefault();
+
+    const novaCarreta = {
+        placa: document.getElementById('carreta-placa').value,
+        modelo: document.getElementById('carreta-modelo').value,
+        eixos: parseInt(document.getElementById('carreta-eixos').value),
+        kmAtual: parseInt(document.getElementById('carreta-km').value)
+    };
+
+    window.rtdb.ref('carretas').push(novaCarreta);
     closeModal();
 }
 
