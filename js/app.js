@@ -222,7 +222,7 @@ function renderVeiculosView(container) {
                 <div class="flex justify-between items-center">
                     <h2 class="text-lg font-black font-heading text-slate-800">FROTA DE VEÍCULOS</h2>
                     <button onclick="showAddVeiculoModal()" class="bg-[#1e3a8a] hover:bg-blue-900 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition">
-                        + Nova Carreta / Veículo
+                        + Novo Veículo
                     </button>
                 </div>
 
@@ -441,7 +441,7 @@ function filterEstoqueVisual(term) {
 }
 
 // ====================================================
-// MODAL DE VEÍCULO / NOVA CARRETA (Alias unificado)
+// MODAL DE VEÍCULO / NOVO VEÍCULO
 // ====================================================
 function showAddCarretaModal() {
     showAddVeiculoModal();
