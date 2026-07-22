@@ -25,7 +25,7 @@ const state = {
     user: null,
     veiculos: [],
     pneus: [],
-    currentTab: 'veiculos',
+    currentTab: 'carretas', // Padronizado para 'carretas' conforme o HTML
     searchTerm: ''
 };
 
@@ -50,9 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
             renderLoginView();
         }
     });
-
-    // Vincula automaticamente eventos de clique caso os botões existam na interface
-    vincularEventosNavegacao();
 });
 
 function initRealtimeListeners() {
@@ -122,7 +119,7 @@ function handleLogout() {
 }
 
 // ====================================================
-// NAVEGAÇÃO & PAINEL SUPERIOR (CORRIGIDO E ROBUSTO)
+// NAVEGAÇÃO & PAINEL SUPERIOR
 // ====================================================
 function updateQuickStats() {
     const elUso = document.getElementById('stat-em-uso');
@@ -137,30 +134,21 @@ function updateQuickStats() {
 function switchTab(tab) {
     state.currentTab = tab;
     
-    // Procura por ID ou por texto/conteúdo nos botões do cabeçalho superior para garantir o destaque visual
-    const botoes = document.querySelectorAll('button, div[onclick*="switchTab"]');
-    botoes.forEach(btn => {
-        const onclickAttr = btn.getAttribute('onclick') || '';
-        if (onclickAttr.includes(tab)) {
-            btn.classList.remove('bg-slate-800', 'text-slate-400');
-            btn.classList.add('bg-blue-600', 'text-white', 'shadow-md');
-        } else if (onclickAttr.includes('switchTab')) {
-            btn.classList.remove('bg-blue-600', 'text-white', 'shadow-md');
-            btn.classList.add('bg-slate-800', 'text-slate-400');
+    // Atualização correta das classes visuais das abas no HTML
+    const btnCarretas = document.getElementById('tab-carretas');
+    const btnPneus = document.getElementById('tab-pneus');
+
+    if (btnCarretas && btnPneus) {
+        if (tab === 'carretas') {
+            btnCarretas.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 bg-blue-600 text-white shadow-sm";
+            btnPneus.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 text-slate-400 hover:text-white";
+        } else {
+            btnPneus.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 bg-blue-600 text-white shadow-sm";
+            btnCarretas.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 text-slate-400 hover:text-white";
         }
-    });
+    }
 
     renderApp();
-}
-
-function vincularEventosNavegacao() {
-    // Garante que o botão "Nova Carreta" / "+ Novo Veículo" funcione globalmente
-    document.querySelectorAll('button').forEach(btn => {
-        const texto = btn.innerText.toLowerCase();
-        if (texto.includes('nova carreta') || texto.includes('novo veículo') || texto.includes('novo veiculo')) {
-            btn.onclick = () => showAddVeiculoModal();
-        }
-    });
 }
 
 function handleSearch(term) {
@@ -173,12 +161,11 @@ function renderApp() {
     const container = document.getElementById('main-container');
     if (!container) return;
 
-    if (state.currentTab === 'veiculos') {
+    if (state.currentTab === 'carretas') {
         renderVeiculosView(container);
     } else {
         renderPneusView(container);
     }
-    vincularEventosNavegacao();
 }
 
 // ====================================================
@@ -201,7 +188,7 @@ function getPosicoesEixo(tipoVeiculo, numeroEixo) {
 }
 
 // ====================================================
-// VISÃO DE VEÍCULOS
+// VISÃO DE VEÍCULOS / CARRETAS
 // ====================================================
 function renderVeiculosView(container) {
     const veiculosFiltrados = state.veiculos.filter(v => 
@@ -237,7 +224,7 @@ function renderVeiculosView(container) {
                 <div class="flex justify-between items-center">
                     <h2 class="text-lg font-black font-heading text-slate-800">FROTA DE VEÍCULOS</h2>
                     <button onclick="showAddVeiculoModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md transition">
-                        + Novo Veículo
+                        + Nova Carreta / Veículo
                     </button>
                 </div>
 
@@ -367,7 +354,7 @@ function renderSlotPneu(veiculoId, pos, pneusDoVeiculo) {
 }
 
 // ====================================================
-// DRAG & DROP
+// DRAG & DROP & CORREÇÃO DE OCUPAÇÃO DE SLOTS
 // ====================================================
 function handleDragStart(e, pneuId) {
     e.dataTransfer.setData('text/plain', pneuId);
@@ -388,11 +375,26 @@ function handleDropToSlot(e, veiculoId, posicao) {
     const pneuId = e.dataTransfer.getData('text/plain');
     if (!pneuId) return;
 
-    window.rtdb.ref(`pneus/${pneuId}`).update({
-        status: 'Em Uso',
-        veiculoId: veiculoId,
-        posicao: posicao
-    }).then(() => showToast(`Pneu alocado na posição ${posicao}!`, "success"));
+    // Verifica se já existe um pneu alocado nesta exata posição do veículo
+    const pneuExistenteNoSlot = state.pneus.find(p => p.veiculoId === veiculoId && p.posicao === posicao);
+
+    const updates = {};
+    
+    // Se houver um pneu ocupando o slot, mandamos ele de volta para o 'Estoque' de forma segura
+    if (pneuExistenteNoSlot && pneuExistenteNoSlot.id !== pneuId) {
+        updates[`pneus/${pneuExistenteNoSlot.id}/status`] = 'Estoque';
+        updates[`pneus/${pneuExistenteNoSlot.id}/veiculoId`] = null;
+        updates[`pneus/${pneuExistenteNoSlot.id}/posicao`] = null;
+    }
+
+    // Aloca o novo pneu na posição desejada
+    updates[`pneus/${pneuId}/status`] = 'Em Uso';
+    updates[`pneus/${pneuId}/veiculoId`] = veiculoId;
+    updates[`pneus/${pneuId}/posicao`] = posicao;
+
+    window.rtdb.ref().update(updates)
+        .then(() => showToast(`Pneu alocado na posição ${posicao}!`, "success"))
+        .catch(err => showToast("Erro ao alocar pneu: " + err.message, "error"));
 }
 
 function handleDropToZone(e, destinoStatus) {
@@ -444,8 +446,12 @@ function filterEstoqueVisual(term) {
 }
 
 // ====================================================
-// MODAL DE VEÍCULO / NOVA CARRETA
+// MODAL DE VEÍCULO / NOVA CARRETA (Alias unificado resolvido)
 // ====================================================
+function showAddCarretaModal() {
+    showAddVeiculoModal();
+}
+
 function showAddVeiculoModal() {
     openModal(`
         <div class="p-6">
@@ -506,9 +512,18 @@ function salvarVeiculo(e) {
 }
 
 function deletarVeiculo(id, placa) {
-    if (confirm(`Confirma a exclusão do veículo ${placa}?`)) {
-        window.rtdb.ref(`veiculos/${id}`).remove()
-            .then(() => showToast("Veículo removido!", "success"));
+    if (confirm(`Confirma a exclusão do veículo ${placa}? Todos os pneus alocados nele serão retornados ao estoque.`)) {
+        // Retorna pneus associados ao estoque antes de excluir a carreta/veículo
+        const updates = {};
+        state.pneus.filter(p => p.veiculoId === id).forEach(p => {
+            updates[`pneus/${p.id}/status`] = 'Estoque';
+            updates[`pneus/${p.id}/veiculoId`] = null;
+            updates[`pneus/${p.id}/posicao`] = null;
+        });
+        updates[`veiculos/${id}`] = null;
+
+        window.rtdb.ref().update(updates)
+            .then(() => showToast("Veículo removido e pneus retornados ao estoque!", "success"));
     }
 }
 
@@ -599,13 +614,22 @@ function showAddPneuModal() {
 function salvarPneusEmLote(e) {
     e.preventDefault();
     const fuegosRaw = document.getElementById('pneu-fuegos').value;
-    const marca = document.getElementById('pneu-marca').value;
-    const medida = document.getElementById('pneu-medida').value;
+    const marca = document.getElementById('pneu-marca').value.trim();
+    const medida = document.getElementById('pneu-medida').value.trim();
     const sulco = parseFloat(document.getElementById('pneu-sulco').value);
 
     const fuegos = fuegosRaw.split(/[\n,]+/).map(f => f.trim()).filter(f => f.length > 0);
-    const updates = {};
+    
+    // Validação de Duplicidade de Número de Fogo no Banco Atual
+    const fuegosExistentes = new Set(state.pneus.map(p => p.fuego));
+    const fuegosDuplicados = fuegos.filter(f => fuegosExistentes.has(f));
 
+    if (fuegosDuplicados.length > 0) {
+        showToast(`Erro: Os seguintes números de fogo já existem: ${fuegosDuplicados.join(', ')}`, "error");
+        return;
+    }
+
+    const updates = {};
     fuegos.forEach(fuego => {
         const newRef = window.rtdb.ref('pneus').push();
         updates[`pneus/${newRef.key}`] = {
@@ -627,7 +651,8 @@ function salvarPneusEmLote(e) {
 
 function deletarPneu(id) {
     if (confirm(`Confirma excluir este pneu?`)) {
-        window.rtdb.ref(`pneus/${id}`).remove();
+        window.rtdb.ref(`pneus/${id}`).remove()
+            .then(() => showToast("Pneu excluído com sucesso!", "success"));
     }
 }
 
