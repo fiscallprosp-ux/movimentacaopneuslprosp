@@ -9,8 +9,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <!-- Firebase App e Realtime Database (Versão Compatível/Universal) -->
+    <!-- Firebase App, Auth e Realtime Database (Compat v10) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
     <script>
@@ -29,6 +30,7 @@
         // Inicialização global do Firebase
         firebase.initializeApp(firebaseConfig);
         window.rtdb = firebase.database();
+        window.auth = firebase.auth();
     </script>
 
     <script>
@@ -57,10 +59,38 @@
 </head>
 <body class="text-slate-800 min-h-screen flex flex-col">
 
-    <!-- Linha Vermelha de Detalhe -->
+    <!-- Linha Vermelha Superior -->
     <div class="h-2 bg-lprosp-red w-full"></div>
 
-    <div class="max-w-7xl mx-auto w-full px-4 py-6 flex-1 flex flex-col gap-6">
+    <!-- TELA DE LOGIN (Visível por padrão até o usuário se autenticar) -->
+    <div id="login-screen" class="flex-1 flex items-center justify-center p-4">
+        <div class="bg-white border border-slate-200 p-8 rounded-2xl shadow-xl w-full max-w-md">
+            <div class="text-center mb-6">
+                <img src="logo.jpg" alt="L-PROSP" class="h-16 mx-auto mb-3 object-contain">
+                <h2 class="text-xl font-bold font-heading text-lprosp-blue-dark">ACESSO AO SISTEMA</h2>
+                <p class="text-xs text-slate-500 font-medium">Informe suas credenciais para continuar</p>
+            </div>
+
+            <div id="login-error" class="hidden mb-4 p-3 bg-red-50 border border-red-200 text-lprosp-red text-xs rounded-xl font-medium"></div>
+
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">E-MAIL</label>
+                    <input type="email" id="login-email" required class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs focus:outline-none focus:border-lprosp-blue">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">SENHA</label>
+                    <input type="password" id="login-password" required class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs focus:outline-none focus:border-lprosp-blue">
+                </div>
+                <button type="submit" class="w-full bg-lprosp-blue text-white hover:bg-lprosp-blue-dark py-3 rounded-xl text-xs font-bold font-heading transition shadow-md">
+                    ENTRAR
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ÁREA PRINCIPAL DO SISTEMA (Oculta até efetuar login) -->
+    <div id="app-screen" class="hidden max-w-7xl mx-auto w-full px-4 py-6 flex-1 flex flex-col gap-6">
 
         <!-- Banner Superior -->
         <header class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -69,22 +99,24 @@
                 <div class="border-l border-slate-200 pl-6">
                     <h1 class="text-2xl font-bold text-lprosp-blue-dark tracking-wide">GESTÃO DE PNEUS E CARRETAS</h1>
                     <p class="text-xs text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
-                        L-PROSP • Realtime Database 
+                        <span id="user-display-email"></span> 
                         <span class="inline-block w-2 h-2 rounded-full bg-lprosp-green animate-pulse"></span>
                     </p>
                 </div>
             </div>
 
             <div class="flex items-center gap-3">
-                <button onclick="showAddTireModal()" 
-                        class="flex items-center gap-2 bg-lprosp-blue text-white hover:bg-lprosp-blue-dark px-4 py-2.5 rounded-xl text-xs font-bold font-heading transition shadow-sm">
+                <button onclick="showAddTireModal()" class="flex items-center gap-2 bg-lprosp-blue text-white hover:bg-lprosp-blue-dark px-4 py-2.5 rounded-xl text-xs font-bold font-heading transition shadow-sm">
                     <i class="fas fa-plus"></i>
                     <span>+ ADICIONAR PNEU</span>
                 </button>
-                <button onclick="showAddCarretaModal()" 
-                        class="flex items-center gap-2 bg-lprosp-red text-white hover:bg-lprosp-red-hover px-4 py-2.5 rounded-xl text-xs font-bold font-heading transition shadow-sm">
+                <button onclick="showAddCarretaModal()" class="flex items-center gap-2 bg-lprosp-red text-white hover:bg-lprosp-red-hover px-4 py-2.5 rounded-xl text-xs font-bold font-heading transition shadow-sm">
                     <i class="fas fa-truck-front"></i>
                     <span>+ NOVA CARRETA</span>
+                </button>
+                <button onclick="handleLogout()" class="flex items-center gap-2 bg-slate-100 text-slate-600 hover:bg-slate-200 px-4 py-2.5 rounded-xl text-xs font-bold font-heading transition">
+                    <i class="fas fa-right-from-bracket"></i>
+                    <span>SAIR</span>
                 </button>
             </div>
         </header>
@@ -108,7 +140,7 @@
         <main class="flex-1" id="main-content">
             <div class="text-center py-16 text-slate-400 font-heading tracking-wider flex flex-col items-center gap-2">
                 <i class="fas fa-spinner fa-spin text-2xl text-lprosp-blue"></i>
-                <span>CONECTANDO AO REALTIME DATABASE...</span>
+                <span>CARREGANDO DADOS...</span>
             </div>
         </main>
     </div>
