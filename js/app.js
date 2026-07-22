@@ -76,10 +76,10 @@ function renderLoginView() {
     const container = document.getElementById('main-container');
     container.innerHTML = `
         <div class="max-w-md w-full mx-auto bg-white border border-slate-200 rounded-2xl p-8 shadow-xl my-10">
-            <div class="text-center mb-8">
-                <!-- LOGO DA EMPRESA -->
-                <div class="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 overflow-hidden bg-blue-600 text-white shadow-lg shadow-blue-500/30">
-                    <img src="logo.png" alt="L-Prosp Logística" class="w-full h-full object-cover" onerror="this.onerror=null; this.parentNode.innerHTML='<i class=\"fas fa-truck-moving text-2xl\"></i>';">
+            <div class="text-center mb-6">
+                <!-- LOGO DA EMPRESA EXIBIDA CORRETAMENTE -->
+                <div class="h-28 flex items-center justify-center mx-auto mb-3">
+                    <img src="logo.jpg" alt="L-Prosp Logística" class="max-h-full max-w-full object-contain" onerror="this.onerror=null; this.parentNode.innerHTML='<i class=\"fas fa-truck-moving text-4xl text-blue-600\"></i>';">
                 </div>
                 <h2 class="text-2xl font-black font-heading text-slate-800 tracking-tight">L-Prosp Logística</h2>
                 <p class="text-xs text-slate-500 mt-1 font-medium">Painel de Gestão e Controle de Pneus</p>
@@ -90,7 +90,7 @@ function renderLoginView() {
                     <label class="block text-xs font-bold text-slate-600 mb-1">USUÁRIO</label>
                     <div class="relative">
                         <i class="fas fa-user absolute left-3 top-3.5 text-slate-400 text-xs"></i>
-                        <input type="text" id="login-username" placeholder="lprosp" required 
+                        <input type="text" id="login-username" placeholder="lprosp ou lurian" required 
                                class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-blue-600 transition">
                     </div>
                 </div>
@@ -115,19 +115,20 @@ function renderLoginView() {
 
 function handleLogin(e) {
     e.preventDefault();
-    let username = document.getElementById('login-username').value.trim();
+    let userInput = document.getElementById('login-username').value.trim().toLowerCase();
     const password = document.getElementById('login-password').value;
     const btn = document.getElementById('btn-login');
 
-    // Se o usuário digitar sem @ (ex: 'lprosp'), converte para e-mail padrão do Firebase
-    if (!username.includes('@')) {
-        username = `${username}@lprosp.com`;
+    // Converte 'lprosp' para 'lprosp@lprosp.com' ou 'lurian' para 'lurian@lprosp.com'
+    let emailFinal = userInput;
+    if (!userInput.includes('@')) {
+        emailFinal = `${userInput}@lprosp.com`;
     }
 
     btn.disabled = true;
     btn.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> Autenticando...`;
 
-    window.auth.signInWithEmailAndPassword(username, password)
+    window.auth.signInWithEmailAndPassword(emailFinal, password)
         .then(() => {
             showToast("Acesso concedido com sucesso!", "success");
         })
