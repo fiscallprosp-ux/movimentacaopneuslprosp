@@ -134,6 +134,21 @@ function updateQuickStats() {
 
 function switchTab(tab) {
     state.currentTab = tab;
+    
+    // Atualiza visualmente os botões de aba no topo (se existirem)
+    const btnPatio = document.getElementById('nav-btn-patio');
+    const btnEstoque = document.getElementById('nav-btn-estoque');
+    
+    if (btnPatio && btnEstoque) {
+        if (tab === 'veiculos') {
+            btnPatio.className = "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md transition";
+            btnEstoque.className = "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-400 hover:text-white transition";
+        } else {
+            btnEstoque.className = "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md transition";
+            btnPatio.className = "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-400 hover:text-white transition";
+        }
+    }
+
     renderApp();
 }
 
@@ -158,7 +173,6 @@ function renderApp() {
 // MAPEAMENTO DAS POSIÇÕES DOS EIXOS
 // ====================================================
 function getPosicoesEixo(tipoVeiculo, numeroEixo) {
-    // Para Cavalo: E1 é direcional (rodagem simples - R1 e R4)
     if (tipoVeiculo === 'cavalo' && numeroEixo === 1) {
         return [
             { pos: `E${numeroEixo}R1`, label: `E${numeroEixo}R1`, lado: 'esquerda' },
@@ -166,7 +180,6 @@ function getPosicoesEixo(tipoVeiculo, numeroEixo) {
         ];
     }
     
-    // Rodagem dupla para demais eixos do Cavalo e todos da Carreta (R1, R2, R3, R4)
     return [
         { pos: `E${numeroEixo}R1`, label: `E${numeroEixo}R1`, lado: 'esquerda_fora' },
         { pos: `E${numeroEixo}R2`, label: `E${numeroEixo}R2`, lado: 'esquerda_dentro' },
