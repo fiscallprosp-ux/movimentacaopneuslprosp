@@ -9,12 +9,12 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <!-- Firebase SDKs (v10 Modular) -->
+    <!-- Firebase SDKs (v10 - Realtime Database) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, doc, setDoc, updateDoc, addDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getDatabase, ref, onValue, set, push, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        // Configurações do seu projeto do Firebase
+        // Suas configurações do Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyCZgTUEIJFu9CcXI9-ppRmS0z-P3pQfscQ",
             authDomain: "controle-de-pneus-87e2e.firebaseapp.com",
@@ -26,18 +26,17 @@
             measurementId: "G-JXGYQQ8S0E"
         };
 
-        // Inicializa o Firebase
+        // Inicializa o Firebase e o Realtime Database
         const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+        const rtdb = getDatabase(app);
 
-        // Exporta para o escopo global do navegador
-        window.fbDB = db;
-        window.fbCollection = collection;
-        window.fbOnSnapshot = onSnapshot;
-        window.fbDoc = doc;
-        window.fbSetDoc = setDoc;
-        window.fbUpdateDoc = updateDoc;
-        window.fbAddDoc = addDoc;
+        // Exporta para o window para o app.js utilizar
+        window.rtdb = rtdb;
+        window.dbRef = ref;
+        window.dbOnValue = onValue;
+        window.dbSet = set;
+        window.dbPush = push;
+        window.dbUpdate = update;
     </script>
 
     <script>
@@ -66,19 +65,19 @@
 </head>
 <body class="text-slate-800 min-h-screen flex flex-col">
 
-    <!-- Detalhe superior em vermelho -->
+    <!-- Linha Vermelha de Detalhe -->
     <div class="h-2 bg-lprosp-red w-full"></div>
 
     <div class="max-w-7xl mx-auto w-full px-4 py-6 flex-1 flex flex-col gap-6">
 
-        <!-- Banner Superior / Cabeçalho Clara -->
+        <!-- Banner Superior -->
         <header class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
             <div class="flex items-center gap-6">
                 <img src="logo.jpg" alt="L-PROSP" class="h-16 object-contain">
                 <div class="border-l border-slate-200 pl-6">
                     <h1 class="text-2xl font-bold text-lprosp-blue-dark tracking-wide">GESTÃO DE PNEUS E CARRETAS</h1>
                     <p class="text-xs text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
-                        L-PROSP • Cloud Database 
+                        L-PROSP • Realtime Database 
                         <span class="inline-block w-2 h-2 rounded-full bg-lprosp-green animate-pulse"></span>
                     </p>
                 </div>
@@ -117,7 +116,7 @@
         <main class="flex-1" id="main-content">
             <div class="text-center py-16 text-slate-400 font-heading tracking-wider flex flex-col items-center gap-2">
                 <i class="fas fa-spinner fa-spin text-2xl text-lprosp-blue"></i>
-                <span>CONECTANDO AO FIREBASE...</span>
+                <span>CONECTANDO AO REALTIME DATABASE...</span>
             </div>
         </main>
     </div>
