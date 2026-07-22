@@ -1,16 +1,18 @@
 // ====================================================
-// CONFIGURAÇÃO E INICIALIZAÇÃO DO FIREBASE
+// CONFIGURAÇÃO E INICIALIZAÇÃO DO FIREBASE (ATUALIZADO)
 // ====================================================
 const firebaseConfig = {
-    apiKey: "AIzaSyDummyKeyForTemplatePurposes123456",
-    authDomain: "premiacao-lprosp-default-rtdb.firebaseapp.com",
-    databaseURL: "https://premiacao-lprosp-default-rtdb.firebaseio.com",
-    projectId: "premiacao-lprosp-default-rtdb",
-    storageBucket: "premiacao-lprosp-default-rtdb.appspot.com",
-    messagingSenderId: "123456789012",
-    appId: "1:123456789012:web:abcdef1234567890"
+    apiKey: "AIzaSyCZgTUEIJFu9CcXI9-ppRmS0z-P3pQfscQ",
+    authDomain: "controle-de-pneus-87e2e.firebaseapp.com",
+    databaseURL: "https://controle-de-pneus-87e2e-default-rtdb.firebaseio.com",
+    projectId: "controle-de-pneus-87e2e",
+    storageBucket: "controle-de-pneus-87e2e.firebasestorage.app",
+    messagingSenderId: "623395771332",
+    appId: "1:623395771332:web:97f0a9c7959278e61fca91",
+    measurementId: "G-JXGYQQ8S0E"
 };
 
+// Inicializa o Firebase no formato Compat do HTML
 if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
@@ -47,25 +49,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// Listener do Realtime Database (Disparado somente após autenticado)
+// Listener do Realtime Database (Garante atualização instantânea)
 function initRealtimeListeners() {
-    // Listener de Carretas
     window.rtdb.ref('carretas').on('value', snapshot => {
         const data = snapshot.val() || {};
         state.carretas = Object.keys(data).map(key => ({ id: key, ...data[key] }));
         renderApp();
     }, error => {
-        showToast("Erro de permissão no banco: " + error.message, "error");
+        showToast("Erro de leitura do banco: " + error.message, "error");
     });
 
-    // Listener de Pneus
     window.rtdb.ref('pneus').on('value', snapshot => {
         const data = snapshot.val() || {};
         state.pneus = Object.keys(data).map(key => ({ id: key, ...data[key] }));
         updateQuickStats();
         renderApp();
     }, error => {
-        showToast("Erro de permissão no banco: " + error.message, "error");
+        showToast("Erro de leitura do banco: " + error.message, "error");
     });
 }
 
@@ -77,7 +77,7 @@ function renderLoginView() {
     container.innerHTML = `
         <div class="max-w-md w-full mx-auto bg-white border border-slate-200 rounded-2xl p-8 shadow-xl my-10">
             <div class="text-center mb-6">
-                <!-- LOGO DA EMPRESA EXIBIDA CORRETAMENTE -->
+                <!-- LOGO AJUSTADA PARA NÃO CORTAR -->
                 <div class="h-28 flex items-center justify-center mx-auto mb-3">
                     <img src="logo.jpg" alt="L-Prosp Logística" class="max-h-full max-w-full object-contain" onerror="this.onerror=null; this.parentNode.innerHTML='<i class=\"fas fa-truck-moving text-4xl text-blue-600\"></i>';">
                 </div>
@@ -119,7 +119,7 @@ function handleLogin(e) {
     const password = document.getElementById('login-password').value;
     const btn = document.getElementById('btn-login');
 
-    // Converte 'lprosp' para 'lprosp@lprosp.com' ou 'lurian' para 'lurian@lprosp.com'
+    // Converte 'lprosp' ou 'lurian' para o e-mail completo do Firebase
     let emailFinal = userInput;
     if (!userInput.includes('@')) {
         emailFinal = `${userInput}@lprosp.com`;
@@ -135,7 +135,12 @@ function handleLogin(e) {
         .catch(error => {
             btn.disabled = false;
             btn.innerHTML = `<span>ENTRAR NO SISTEMA</span> <i class="fas fa-arrow-right"></i>`;
-            showToast("Usuário ou senha incorretos.", "error");
+            
+            if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+                showToast("Usuário ou senha incorretos.", "error");
+            } else {
+                showToast("Erro ao conectar: " + error.message, "error");
+            }
         });
 }
 
@@ -146,7 +151,7 @@ function handleLogout() {
 }
 
 // ====================================================
-// NAVEGAÇÃO E REGRAS DE INTERFACE
+// NAVEGAÇÃO E METRICAS
 // ====================================================
 function updateQuickStats() {
     const emUso = state.pneus.filter(p => p.status === 'Em Uso').length;
@@ -194,7 +199,7 @@ function renderApp() {
 }
 
 // ====================================================
-// 1. VISÃO DE CARRETAS / PÁTIO (DRAG & DROP VISUAL)
+// 1. VISÃO DE CARRETAS / PÁTIO (DRAG & DROP)
 // ====================================================
 function renderCarretasView(container) {
     const carretasFiltradas = state.carretas.filter(c => 
@@ -207,9 +212,7 @@ function renderCarretasView(container) {
     container.innerHTML = `
         <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
             
-            <!-- COLUNA DA ESQUERDA: DIAGRAMA DAS CARRETAS (8 Colunas) -->
             <div class="xl:col-span-8 space-y-6">
-                <!-- Zonas de Desmontagem Rápida -->
                 <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm grid grid-cols-2 md:grid-cols-3 gap-3">
                     <div id="zone-Estoque" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToZone(event, 'Estoque')" 
                          class="tire-action-zone border-2 border-dashed border-slate-200 rounded-xl p-3 text-center flex flex-col items-center justify-center bg-slate-50 hover:bg-blue-50 transition">
@@ -228,7 +231,6 @@ function renderCarretasView(container) {
                     </div>
                 </div>
 
-                <!-- Lista de Carretas -->
                 ${carretasFiltradas.length === 0 ? `
                     <div class="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400">
                         <i class="fas fa-truck-front text-4xl mb-3 text-slate-300"></i>
@@ -247,12 +249,10 @@ function renderCarretasView(container) {
                                     <p class="text-xs text-slate-400 mt-1">${escapeHtml(carreta.modelo || 'Sem Modelo')} • ${carreta.kmAtual ? carreta.kmAtual.toLocaleString() : 0} KM</p>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <button onclick="showEditCarretaModal('${carreta.id}')" class="text-slate-400 hover:text-white p-1.5"><i class="fas fa-pen-to-square"></i></button>
                                     <button onclick="deletarCarreta('${carreta.id}', '${carreta.placa}')" class="text-slate-400 hover:text-red-400 p-1.5"><i class="fas fa-trash-can"></i></button>
                                 </div>
                             </div>
 
-                            <!-- Diagrama do Veículo -->
                             <div class="flex flex-col items-center gap-6 py-2">
                                 <div class="text-[10px] text-slate-500 font-bold font-heading uppercase tracking-widest">FRENTE DA CARRETA</div>
                                 
@@ -264,7 +264,6 @@ function renderCarretasView(container) {
 
                                     return `
                                         <div class="flex items-center justify-center gap-4 w-full max-w-md">
-                                            <!-- SLOT ESQUERDO -->
                                             <div ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToSlot(event, '${carreta.id}', '${posEsquerda}')"
                                                  class="w-36 h-16 rounded-xl border-2 ${pneuE ? (pneuE.sulcoAtual <= 3 ? 'border-red-500 bg-red-950/40' : 'border-blue-500 bg-blue-950/40') : 'border-dashed border-slate-700 bg-slate-800/50'} 
                                                  flex items-center justify-between px-3 transition-all">
@@ -281,10 +280,8 @@ function renderCarretasView(container) {
                                                 `}
                                             </div>
 
-                                            <!-- EIXO -->
                                             <div class="h-2.5 flex-1 bg-slate-700 rounded-full border border-slate-600"></div>
 
-                                            <!-- SLOT DIREITO -->
                                             <div ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToSlot(event, '${carreta.id}', '${posDireita}')"
                                                  class="w-36 h-16 rounded-xl border-2 ${pneuD ? (pneuD.sulcoAtual <= 3 ? 'border-red-500 bg-red-950/40' : 'border-blue-500 bg-blue-950/40') : 'border-dashed border-slate-700 bg-slate-800/50'} 
                                                  flex items-center justify-between px-3 transition-all">
@@ -309,7 +306,6 @@ function renderCarretasView(container) {
                 }).join('')}
             </div>
 
-            <!-- COLUNA DA DIREITA: ESTOQUE VISUAL (4 Colunas) -->
             <div class="xl:col-span-4">
                 <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm sticky top-20">
                     <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
@@ -317,7 +313,6 @@ function renderCarretasView(container) {
                         <span class="text-[10px] text-slate-400 font-semibold">Arraste para a posição</span>
                     </div>
 
-                    <!-- Busca Rápida de Pneus no Estoque -->
                     <div class="relative mb-4">
                         <i class="fas fa-search absolute left-3 top-2.5 text-slate-400 text-xs"></i>
                         <input type="text" placeholder="Filtrar nº de fogo..." 
@@ -325,7 +320,6 @@ function renderCarretasView(container) {
                                class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-600">
                     </div>
 
-                    <!-- Grid de Cards do Estoque -->
                     <div id="visual-estoque-grid" class="grid grid-cols-3 gap-2.5 max-h-[calc(100vh-230px)] overflow-y-auto pr-1">
                         ${pneusEstoque.length === 0 ? '<p class="col-span-3 text-center text-slate-400 text-xs py-8">Nenhum pneu no estoque.</p>' : 
                             pneusEstoque.map(pneu => `
@@ -347,7 +341,7 @@ function renderCarretasView(container) {
 }
 
 // ====================================================
-// LÓGICA DE DRAG & DROP
+// DRAG & DROP
 // ====================================================
 function handleDragStart(e, pneuId, sourceType) {
     e.dataTransfer.setData('text/plain', JSON.stringify({ pneuId, sourceType }));
@@ -378,7 +372,7 @@ function handleDropToSlot(e, carretaId, posicao) {
         carretaId: carretaId,
         posicao: posicao
     }).then(() => showToast(`Pneu instalado na posição ${posicao}!`, "success"))
-      .catch((err) => showToast("Erro de gravação: Sem permissão (" + err.message + ")", "error"));
+      .catch((err) => showToast("Erro: " + err.message, "error"));
 }
 
 function handleDropToZone(e, destinoStatus) {
@@ -444,7 +438,7 @@ function filterEstoqueVisual(term) {
 }
 
 // ====================================================
-// 2. VISÃO DE TABELA DE PNEUS (ESTOQUE E HISTÓRICO)
+// 2. VISÃO DE TABELA DE PNEUS
 // ====================================================
 function renderPneusView(container) {
     const pneusFiltrados = state.pneus.filter(p => 
@@ -579,7 +573,7 @@ function salvarPneusEmLote(e) {
     window.rtdb.ref().update(updates).then(() => {
         closeModal();
         showToast(`${fuegos.length} pneu(s) cadastrado(s) no estoque!`, "success");
-    }).catch((err) => showToast("Sem permissão para criar registros: " + err.message, "error"));
+    }).catch((err) => showToast("Erro: " + err.message, "error"));
 }
 
 function showAddCarretaModal() {
@@ -641,7 +635,7 @@ function deletarCarreta(id, placa) {
     if (confirm(`Tem certeza que deseja excluir a carreta ${placa}?`)) {
         window.rtdb.ref(`carretas/${id}`).remove()
             .then(() => showToast("Carreta removida!", "success"))
-            .catch((err) => showToast("Erro de permissão: " + err.message, "error"));
+            .catch((err) => showToast("Erro: " + err.message, "error"));
     }
 }
 
@@ -649,12 +643,12 @@ function deletarPneu(id, fuego) {
     if (confirm(`Tem certeza que deseja excluir o pneu nº ${fuego}?`)) {
         window.rtdb.ref(`pneus/${id}`).remove()
             .then(() => showToast("Pneu removido!", "success"))
-            .catch((err) => showToast("Erro de permissão: " + err.message, "error"));
+            .catch((err) => showToast("Erro: " + err.message, "error"));
     }
 }
 
 // ====================================================
-// UTILITÁRIOS (MODAIS, TOASTS E SEGURANÇA)
+// UTILITÁRIOS
 // ====================================================
 function openModal(htmlContent) {
     const container = document.getElementById('modal-container');
