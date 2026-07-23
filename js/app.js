@@ -91,7 +91,7 @@ function renderLoginView() {
         <div class="max-w-md w-full mx-auto bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl my-10 text-white">
             <div class="text-center mb-6">
                 <div class="h-24 flex items-center justify-center mx-auto mb-3">
-                    <img src="logo.jpg" alt="L-Prosp" class="max-h-full max-w-full object-contain" onerror="this.onerror=null; this.parentNode.innerHTML='<i class=\"fas fa-truck text-4xl text-blue-500\"></i>';">
+                    <img src="logo.jpg" alt="L-Prosp" class="max-h-full max-w-full object-contain" onerror="this.onerror=null; this.parentNode.innerHTML='<i class=&quot;fas fa-truck text-4xl text-blue-500&quot;></i>';">
                 </div>
                 <h2 class="text-2xl font-black tracking-tight font-heading">L-Prosp Logística</h2>
                 <p class="text-xs text-slate-400 mt-1">Gestão Inteligente de Pneus e Frota</p>
@@ -100,7 +100,7 @@ function renderLoginView() {
             <form onsubmit="handleLogin(event)" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-300 mb-1">USUÁRIO</label>
-                    <input type="text" id="login-username" placeholder="lprosp ou lurian" required 
+                    <input type="text" id="login-username" placeholder="Digite seu usuário..." required 
                            class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500">
                 </div>
                 <div>
@@ -115,7 +115,6 @@ function renderLoginView() {
         </div>
     `;
 }
-
 function handleLogin(e) {
     e.preventDefault();
     let userInput = document.getElementById('login-username').value.trim().toLowerCase();
