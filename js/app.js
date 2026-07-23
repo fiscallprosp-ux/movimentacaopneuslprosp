@@ -145,6 +145,12 @@ function handleLogout() {
     window.auth.signOut();
 }
 
+// Extrai um nome de usuário legível a partir do e-mail logado (ex: lprosp@lprosp.com -> lprosp)
+function getUsuarioAtual() {
+    if (!state.user || !state.user.email) return 'desconhecido';
+    return state.user.email.split('@')[0];
+}
+
 // ====================================================
 // NAVEGAÇÃO & PAINEL SUPERIOR (CORRIGIDO E ROBUSTO)
 // ====================================================
@@ -221,8 +227,13 @@ function calcularMetricasPneu(pneu) {
         if (veiculo) kmEmAndamento = Math.max(0, (veiculo.kmAtual || 0) - pneu.kmInstalacaoAtual);
     }
     const kmTotal = (pneu.kmRodadoTotal || 0) + kmEmAndamento;
-    const custoTotal = (pneu.valorPago || 0) + (pneu.custoReformasTotal || 0);
-    const custoPorKm = kmTotal > 0 ? custoTotal / kmTotal : null;
+
+    // Se não sabemos o valor pago E não houve custo de reforma registrado, o custo é
+    // DESCONHECIDO (null) — não pode ser tratado como zero, senão o pneu pareceria
+    // "de graça" e distorceria o ranking de custo por km.
+    const custoConhecido = pneu.valorPago != null || (pneu.custoReformasTotal || 0) > 0;
+    const custoTotal = custoConhecido ? (pneu.valorPago || 0) + (pneu.custoReformasTotal || 0) : null;
+    const custoPorKm = (custoTotal !== null && kmTotal > 0) ? custoTotal / kmTotal : null;
     return { kmTotal, custoTotal, custoPorKm };
 }
 
@@ -491,7 +502,8 @@ function confirmarMontagem(e, pneuId, veiculoId, posicao) {
         placa: veiculo.placa,
         posicao: posicao,
         kmVeiculo: km,
-        sulco: pneu.sulcoAtual ?? null
+        sulco: pneu.sulcoAtual ?? null,
+        usuario: getUsuarioAtual()
     };
 
     window.rtdb.ref().update(updates).then(() => {
@@ -591,7 +603,8 @@ function confirmarMovimentacao(e, pneuId, destino) {
         kmRodadoCiclo: cicloKm,
         sulco: sulco,
         custo: custoReforma > 0 ? custoReforma : null,
-        qtdReformas: destino === 'Reforma' ? qtdReformasNova : null
+        qtdReformas: destino === 'Reforma' ? qtdReformasNova : null,
+        usuario: getUsuarioAtual()
     };
 
     window.rtdb.ref().update(updates).then(() => {
@@ -717,7 +730,8 @@ function deletarVeiculo(id, placa) {
                 kmVeiculo: kmFinal,
                 kmRodadoCiclo: cicloKm,
                 sulco: p.sulcoAtual ?? null,
-                custo: null
+                custo: null,
+                usuario: getUsuarioAtual()
             };
         });
         updates[`veiculos/${id}`] = null;
@@ -740,9 +754,14 @@ function renderPneusView(container) {
         <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             <div class="p-5 border-b border-slate-100 flex justify-between items-center">
                 <h3 class="font-bold text-slate-800 text-sm">LISTA DE PNEUS (${pneusFiltrados.length})</h3>
-                <button onclick="showAddPneuModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold">
-                    + Cadastrar Pneus em Lote
-                </button>
+                <div class="flex gap-2">
+                    <button onclick="showAddPneuHistoricoModal()" class="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5">
+                        <i class="fas fa-clock-rotate-left"></i> Pneu Existente (com Histórico)
+                    </button>
+                    <button onclick="showAddPneuModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold">
+                        + Cadastrar Pneus Novos em Lote
+                    </button>
+                </div>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-xs">
@@ -844,6 +863,7 @@ function showHistoricoPneu(pneuId) {
                             <span class="font-bold text-slate-800">${escapeHtml(ev.tipo)}</span>
                             <span class="text-slate-400">${new Date(ev.data).toLocaleString('pt-BR')}</span>
                         </div>
+                        ${ev.usuario ? `<div class="text-[10px] text-blue-600 font-bold mb-1"><i class="fas fa-user"></i> ${escapeHtml(ev.usuario)}</div>` : ''}
                         <div class="text-slate-500 flex flex-wrap gap-x-4">
                             ${ev.placa ? `<span>Veículo: ${escapeHtml(ev.placa)}</span>` : ''}
                             ${ev.posicao ? `<span>Posição: ${ev.posicao}</span>` : ''}
@@ -872,11 +892,20 @@ function renderAnaliseView(container) {
         const marca = pneu.marca || 'Sem marca';
         const { kmTotal, custoTotal } = calcularMetricasPneu(pneu);
         if (!porMarca[marca]) {
-            porMarca[marca] = { marca, qtdPneus: 0, custoTotal: 0, kmTotal: 0, qtdDescartados: 0, kmTotalDescartados: 0 };
+            porMarca[marca] = {
+                marca, qtdPneus: 0, qtdSemCusto: 0,
+                custoTotalConhecido: 0, kmTotalComCustoConhecido: 0,
+                kmTotalGeral: 0, qtdDescartados: 0, kmTotalDescartados: 0
+            };
         }
         porMarca[marca].qtdPneus++;
-        porMarca[marca].custoTotal += custoTotal;
-        porMarca[marca].kmTotal += kmTotal;
+        porMarca[marca].kmTotalGeral += kmTotal;
+        if (custoTotal !== null) {
+            porMarca[marca].custoTotalConhecido += custoTotal;
+            porMarca[marca].kmTotalComCustoConhecido += kmTotal;
+        } else {
+            porMarca[marca].qtdSemCusto++;
+        }
         if (pneu.status === 'Descartado') {
             porMarca[marca].qtdDescartados++;
             porMarca[marca].kmTotalDescartados += kmTotal;
@@ -885,7 +914,7 @@ function renderAnaliseView(container) {
 
     const ranking = Object.values(porMarca).map(m => ({
         ...m,
-        custoPorKm: m.kmTotal > 0 ? m.custoTotal / m.kmTotal : null,
+        custoPorKm: m.kmTotalComCustoConhecido > 0 ? m.custoTotalConhecido / m.kmTotalComCustoConhecido : null,
         kmMedioAteDescarte: m.qtdDescartados > 0 ? m.kmTotalDescartados / m.qtdDescartados : null
     })).sort((a, b) => {
         if (a.custoPorKm === null) return 1;
@@ -893,15 +922,30 @@ function renderAnaliseView(container) {
         return a.custoPorKm - b.custoPorKm;
     });
 
-    const totalInvestido = state.pneus.reduce((acc, p) => acc + calcularMetricasPneu(p).custoTotal, 0);
-    const totalKmRodado = state.pneus.reduce((acc, p) => acc + calcularMetricasPneu(p).kmTotal, 0);
-    const custoMedioGeral = totalKmRodado > 0 ? totalInvestido / totalKmRodado : null;
+    let totalInvestido = 0, totalKmRodado = 0, totalKmComCustoConhecido = 0, totalSemCusto = 0;
+    state.pneus.forEach(p => {
+        const { kmTotal, custoTotal } = calcularMetricasPneu(p);
+        totalKmRodado += kmTotal;
+        if (custoTotal !== null) {
+            totalInvestido += custoTotal;
+            totalKmComCustoConhecido += kmTotal;
+        } else {
+            totalSemCusto++;
+        }
+    });
+    const custoMedioGeral = totalKmComCustoConhecido > 0 ? totalInvestido / totalKmComCustoConhecido : null;
 
     container.innerHTML = `
         <div class="space-y-6">
+            ${totalSemCusto > 0 ? `
+                <div class="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold rounded-xl p-3 flex items-center gap-2">
+                    <i class="fas fa-circle-info"></i>
+                    ${totalSemCusto} pneu(s) sem valor de compra informado — eles contam para o km rodado, mas ficam de fora dos cálculos de custo/km até você informar o valor.
+                </div>
+            ` : ''}
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                    <div class="text-[10px] text-slate-400 font-bold uppercase mb-1">Total Investido em Pneus</div>
+                    <div class="text-[10px] text-slate-400 font-bold uppercase mb-1">Total Investido (custo conhecido)</div>
                     <div class="text-xl font-black text-slate-800">R$ ${totalInvestido.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</div>
                 </div>
                 <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
@@ -917,7 +961,7 @@ function renderAnaliseView(container) {
             <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                 <div class="p-5 border-b border-slate-100">
                     <h3 class="font-bold text-slate-800 text-sm">RANKING DE MARCAS (menor custo/km primeiro)</h3>
-                    <p class="text-[10px] text-slate-400 mt-1">Custo/km considera valor pago + reformas dividido pelo km total rodado por todos os pneus da marca.</p>
+                    <p class="text-[10px] text-slate-400 mt-1">Custo/km considera apenas pneus com valor de compra conhecido, dividido pelo km rodado por eles.</p>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-xs">
@@ -926,32 +970,215 @@ function renderAnaliseView(container) {
                                 <th class="p-3.5">Marca</th>
                                 <th class="p-3.5">Qtd Pneus</th>
                                 <th class="p-3.5">Km Total Rodado</th>
-                                <th class="p-3.5">Investido Total</th>
+                                <th class="p-3.5">Investido (conhecido)</th>
                                 <th class="p-3.5">Custo/Km</th>
                                 <th class="p-3.5">Km Médio até Descarte</th>
+                                <th class="p-3.5">Sem Custo</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
                             ${ranking.length === 0 ? `
-                                <tr><td colspan="6" class="p-8 text-center text-slate-400">Nenhum pneu cadastrado ainda.</td></tr>
+                                <tr><td colspan="7" class="p-8 text-center text-slate-400">Nenhum pneu cadastrado ainda.</td></tr>
                             ` : ranking.map((m, i) => `
                                 <tr class="${i === 0 && m.custoPorKm !== null ? 'bg-emerald-50' : ''}">
                                     <td class="p-3.5 font-black text-slate-800">${escapeHtml(m.marca)} ${i === 0 && m.custoPorKm !== null ? '<i class="fas fa-trophy text-amber-500 ml-1" title="Melhor custo-benefício"></i>' : ''}</td>
                                     <td class="p-3.5 text-slate-600">${m.qtdPneus}</td>
-                                    <td class="p-3.5 text-slate-600">${m.kmTotal.toLocaleString('pt-BR')} km</td>
-                                    <td class="p-3.5 text-slate-600">R$ ${m.custoTotal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                                    <td class="p-3.5 text-slate-600">${m.kmTotalGeral.toLocaleString('pt-BR')} km</td>
+                                    <td class="p-3.5 text-slate-600">R$ ${m.custoTotalConhecido.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                                     <td class="p-3.5 font-semibold text-slate-800">${m.custoPorKm !== null ? 'R$ ' + m.custoPorKm.toFixed(3) : '-'}</td>
                                     <td class="p-3.5 text-slate-600">${m.kmMedioAteDescarte !== null ? Math.round(m.kmMedioAteDescarte).toLocaleString('pt-BR') + ' km' : '- (nenhum descartado ainda)'}</td>
+                                    <td class="p-3.5 text-slate-500">${m.qtdSemCusto > 0 ? m.qtdSemCusto : '-'}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
                     </table>
                 </div>
             </div>
-
-            <p class="text-[10px] text-slate-400 text-center">Dica: o custo/km só aparece quando o pneu já rodou alguma distância (montado em um veículo com km informado na montagem e na desmontagem).</p>
         </div>
     `;
+}
+
+// ====================================================
+// CADASTRO DE PNEU EXISTENTE (JÁ RODADO / JÁ RECAPADO)
+// ====================================================
+function showAddPneuHistoricoModal() {
+    const veiculosOptions = state.veiculos.map(v => `<option value="${v.id}">${escapeHtml(v.placa)} (${escapeHtml(v.modelo || '')})</option>`).join('');
+
+    openModal(`
+        <div class="p-6 max-h-[85vh] overflow-y-auto">
+            <h3 class="text-lg font-bold text-slate-800 mb-1">Cadastrar Pneu Existente</h3>
+            <p class="text-xs text-slate-500 mb-4">Para pneus que já estão em uso há tempo, já rodaram km ou já foram recapados. Informe o que ele já acumulou até agora — o sistema vai continuar contando a partir daí.</p>
+            <form onsubmit="salvarPneuHistorico(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE FOGO</label>
+                    <input type="text" id="ph-fuego" placeholder="Ex: 85" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">MARCA</label>
+                        <input type="text" id="ph-marca" placeholder="Ex: Michelin" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">MEDIDA</label>
+                        <input type="text" id="ph-medida" placeholder="Ex: 295/80 R22.5" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">SULCO ATUAL (MM)</label>
+                    <input type="number" step="0.1" id="ph-sulco" placeholder="Ex: 8.0" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                </div>
+
+                <div class="border-t border-slate-100 pt-3">
+                    <p class="text-[11px] font-bold text-slate-500 uppercase mb-2">Histórico anterior (o que ele já acumulou)</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">KM JÁ RODADO ATÉ HOJE</label>
+                            <input type="number" id="ph-km-anterior" placeholder="0" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs">
+                            <p class="text-[10px] text-slate-400 mt-1">Se não souber precisamente, deixe uma estimativa. Pode zerar se não souber.</p>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE REFORMAS JÁ FEITAS</label>
+                            <input type="number" id="ph-qtd-reformas" placeholder="0" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-100 pt-3">
+                    <p class="text-[11px] font-bold text-slate-500 uppercase mb-2">Financeiro (opcional, se souber)</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">VALOR PAGO NA COMPRA (R$)</label>
+                            <input type="number" step="0.01" id="ph-valor" placeholder="Deixe em branco se não souber" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">GASTO TOTAL COM REFORMAS (R$)</label>
+                            <input type="number" step="0.01" id="ph-custo-reformas" placeholder="Deixe em branco se não souber" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-100 pt-3">
+                    <label class="block text-xs font-bold text-slate-600 mb-1">SITUAÇÃO ATUAL DO PNEU</label>
+                    <select id="ph-status" onchange="document.getElementById('ph-em-uso-bloco').classList.toggle('hidden', this.value !== 'Em Uso')" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-bold">
+                        <option value="Estoque">Em estoque (sobressalente)</option>
+                        <option value="Reforma">Em reforma agora</option>
+                        <option value="Em Uso">Já montado em um veículo</option>
+                    </select>
+                </div>
+
+                <div id="ph-em-uso-bloco" class="hidden space-y-3 bg-slate-50 rounded-xl p-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">VEÍCULO</label>
+                        <select id="ph-veiculo" class="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs">
+                            <option value="">${state.veiculos.length === 0 ? 'Nenhum veículo cadastrado ainda' : 'Selecione...'}</option>
+                            ${veiculosOptions}
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">POSIÇÃO (Ex: E1R1)</label>
+                            <input type="text" id="ph-posicao" placeholder="Ex: E1R1" class="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs uppercase">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL DO VEÍCULO</label>
+                            <input type="number" id="ph-km-veiculo" placeholder="0" class="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 mt-6">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">CANCELAR</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">SALVAR PNEU</button>
+                </div>
+            </form>
+        </div>
+    `);
+}
+
+function salvarPneuHistorico(e) {
+    e.preventDefault();
+    const fuego = document.getElementById('ph-fuego').value.trim();
+    const marca = document.getElementById('ph-marca').value.trim();
+    const medida = document.getElementById('ph-medida').value.trim();
+    const sulco = parseFloat(document.getElementById('ph-sulco').value);
+    const kmAnterior = parseInt(document.getElementById('ph-km-anterior').value) || 0;
+    const qtdReformas = parseInt(document.getElementById('ph-qtd-reformas').value) || 0;
+    const valorPagoRaw = document.getElementById('ph-valor').value;
+    const custoReformasRaw = document.getElementById('ph-custo-reformas').value;
+    const valorPago = valorPagoRaw === '' ? null : parseFloat(valorPagoRaw);
+    const custoReformas = custoReformasRaw === '' ? 0 : parseFloat(custoReformasRaw);
+    const status = document.getElementById('ph-status').value;
+
+    if (state.pneus.some(p => p.fuego === fuego)) {
+        showToast(`Já existe um pneu cadastrado com o número de fogo ${fuego}!`, "error");
+        return;
+    }
+
+    let veiculoId = null, posicao = null, kmVeiculoAtual = null, veiculo = null;
+    if (status === 'Em Uso') {
+        veiculoId = document.getElementById('ph-veiculo').value;
+        posicao = document.getElementById('ph-posicao').value.trim().toUpperCase();
+        kmVeiculoAtual = parseInt(document.getElementById('ph-km-veiculo').value) || 0;
+        veiculo = state.veiculos.find(v => v.id === veiculoId);
+
+        if (!veiculoId || !veiculo) {
+            showToast("Selecione o veículo em que este pneu está montado.", "error");
+            return;
+        }
+        if (!posicao) {
+            showToast("Informe a posição do pneu no veículo (ex: E1R1).", "error");
+            return;
+        }
+        const ocupado = state.pneus.some(p => p.veiculoId === veiculoId && p.posicao === posicao);
+        if (ocupado) {
+            showToast(`A posição ${posicao} no veículo ${veiculo.placa} já está ocupada por outro pneu.`, "error");
+            return;
+        }
+    }
+
+    const newRef = window.rtdb.ref('pneus').push();
+    const updates = {};
+    updates[`pneus/${newRef.key}`] = {
+        fuego: fuego,
+        marca: marca,
+        medida: medida,
+        sulcoAtual: sulco,
+        sulcoInicial: sulco, // desconhecido para pneus retroativos; usamos o sulco atual como referência
+        status: status,
+        veiculoId: veiculoId,
+        posicao: posicao,
+        valorPago: valorPago,
+        dataCompra: null,
+        kmInstalacaoAtual: status === 'Em Uso' ? kmVeiculoAtual : null,
+        kmRodadoTotal: kmAnterior,
+        custoReformasTotal: custoReformas,
+        qtdReformas: qtdReformas
+    };
+
+    if (status === 'Em Uso') {
+        updates[`veiculos/${veiculoId}/kmAtual`] = Math.max(kmVeiculoAtual, veiculo.kmAtual || 0);
+    }
+
+    const histRef = window.rtdb.ref('historico').push();
+    updates[`historico/${histRef.key}`] = {
+        pneuId: newRef.key,
+        fuego: fuego,
+        tipo: 'Cadastro Retroativo',
+        data: Date.now(),
+        veiculoId: veiculoId,
+        placa: veiculo ? veiculo.placa : null,
+        posicao: posicao,
+        kmVeiculo: status === 'Em Uso' ? kmVeiculoAtual : null,
+        kmRodadoCiclo: kmAnterior > 0 ? kmAnterior : null,
+        sulco: sulco,
+        qtdReformas: qtdReformas > 0 ? qtdReformas : null,
+        usuario: getUsuarioAtual()
+    };
+
+    window.rtdb.ref().update(updates).then(() => {
+        closeModal();
+        showToast(`Pneu ${fuego} cadastrado com histórico (${kmAnterior.toLocaleString('pt-BR')} km e ${qtdReformas} reforma(s) já registrados)!`, "success");
+    });
 }
 
 function showAddPneuModal() {
@@ -975,16 +1202,30 @@ function showAddPneuModal() {
                     </div>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">SULCO INICIAL (MM)</label>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">SULCO ATUAL (MEDIDO AGORA, EM MM)</label>
                     <input type="number" step="0.1" id="pneu-sulco" value="15.0" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
                 </div>
+
+                <div class="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="pneu-usado" onchange="toggleCampoUsado()" class="w-4 h-4">
+                        <span class="text-xs font-bold text-amber-800">Este(s) pneu(s) já é(são) usado(s) / já foi(ram) recapado(s) antes (não é novo de fábrica)</span>
+                    </label>
+                    <div id="campo-recapagens" class="hidden mt-3">
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE RECAPAGENS QUE ELE(S) JÁ SOFREU(RAM)</label>
+                        <input type="number" step="1" min="0" id="pneu-recapagens-existentes" value="0" class="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs">
+                        <p class="text-[10px] text-amber-700 mt-1">O km rodado e o histórico de reformas anteriores a hoje não existem no sistema — a contagem de km e custo/km começa a partir de agora.</p>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">VALOR PAGO POR UNIDADE (R$)</label>
-                        <input type="number" step="0.01" id="pneu-valor" placeholder="Ex: 2350.00" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                        <input type="number" step="0.01" id="pneu-valor" placeholder="Deixe em branco se não souber" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs">
+                        <p class="text-[10px] text-slate-400 mt-1">Deixe vazio para compras antigas sem valor conhecido — não entrará como custo zero.</p>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">DATA DA COMPRA</label>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">DATA DA COMPRA (OU DE HOJE, SE NÃO SOUBER)</label>
                         <input type="date" id="pneu-data-compra" value="${hoje}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
                     </div>
                 </div>
@@ -997,14 +1238,26 @@ function showAddPneuModal() {
     `);
 }
 
+// Mostra/esconde o campo de nº de recapagens conforme o checkbox "pneu usado"
+function toggleCampoUsado() {
+    const campo = document.getElementById('campo-recapagens');
+    const checkbox = document.getElementById('pneu-usado');
+    if (campo && checkbox) {
+        campo.classList.toggle('hidden', !checkbox.checked);
+    }
+}
+
 function salvarPneusEmLote(e) {
     e.preventDefault();
     const fuegosRaw = document.getElementById('pneu-fuegos').value;
     const marca = document.getElementById('pneu-marca').value;
     const medida = document.getElementById('pneu-medida').value;
     const sulco = parseFloat(document.getElementById('pneu-sulco').value);
-    const valorPago = parseFloat(document.getElementById('pneu-valor').value) || 0;
+    const valorPagoRaw = document.getElementById('pneu-valor').value;
+    const valorPago = valorPagoRaw === '' ? null : parseFloat(valorPagoRaw);
     const dataCompra = document.getElementById('pneu-data-compra').value;
+    const usado = document.getElementById('pneu-usado').checked;
+    const recapagensExistentes = usado ? (parseInt(document.getElementById('pneu-recapagens-existentes').value) || 0) : 0;
 
     const fuegosDigitados = fuegosRaw.split(/[\n,]+/).map(f => f.trim()).filter(f => f.length > 0);
     const fuegosExistentes = new Set(state.pneus.map(p => p.fuego));
@@ -1026,7 +1279,9 @@ function salvarPneusEmLote(e) {
             marca: marca,
             medida: medida,
             sulcoAtual: sulco,
-            sulcoInicial: sulco,
+            // Só grava sulco "inicial" (de pneu novo) quando realmente for novo de fábrica.
+            // Para pneu usado, não sabemos o sulco original de fábrica.
+            sulcoInicial: usado ? null : sulco,
             status: 'Estoque',
             veiculoId: null,
             posicao: null,
@@ -1035,19 +1290,22 @@ function salvarPneusEmLote(e) {
             kmInstalacaoAtual: null,
             kmRodadoTotal: 0,
             custoReformasTotal: 0,
-            qtdReformas: 0
+            qtdReformas: recapagensExistentes,
+            origem: usado ? 'usado' : 'novo'
         };
         const histRef = window.rtdb.ref('historico').push();
         updates[`historico/${histRef.key}`] = {
             pneuId: newRef.key,
             fuego: fuego,
-            tipo: 'Cadastro',
+            tipo: usado ? 'Cadastro (pneu usado)' : 'Cadastro',
             data: Date.now(),
             veiculoId: null,
             placa: null,
             posicao: null,
             kmVeiculo: null,
-            sulco: sulco
+            sulco: sulco,
+            qtdReformas: usado && recapagensExistentes > 0 ? recapagensExistentes : null,
+            usuario: getUsuarioAtual()
         };
     });
 
