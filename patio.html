@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L-Prosp - Operação de Pátio</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Firebase App & Realtime Database (SDK Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen pb-12">
+
+    <!-- Cabeçalho Simplificado -->
+    <header class="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 z-50 flex justify-between items-center shadow-lg">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 bg-blue-600/20 border border-blue-500/30 rounded-xl flex items-center justify-center text-blue-400">
+                <i class="fas fa-truck-pickup text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-sm font-black tracking-wide uppercase text-white">L-Prosp Pátio</h1>
+                <p class="text-[10px] text-slate-400">Registro Operacional de Pneus</p>
+            </div>
+        </div>
+        <span class="text-[10px] bg-slate-800 border border-slate-700 text-slate-300 font-semibold px-2.5 py-1 rounded-full">
+            <i class="fas fa-wifi text-emerald-400 text-[8px] mr-1"></i> On-line
+        </span>
+    </header>
+
+    <!-- Form Container -->
+    <main class="max-w-md mx-auto p-4 space-y-4">
+
+        <!-- Banner Explicativo -->
+        <div class="bg-blue-950/40 border border-blue-800/40 rounded-2xl p-3.5 flex items-start gap-3">
+            <i class="fas fa-circle-info text-blue-400 text-base mt-0.5"></i>
+            <p class="text-xs text-slate-300 leading-relaxed">
+                As trocas enviadas aqui entram no sistema como <b>solicitação pendente</b> para aprovação do gestor.
+            </p>
+        </div>
+
+        <!-- Formulário do Pátio -->
+        <form id="form-patio" onsubmit="enviarSolicitacao(event)" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-xl">
+            
+            <!-- Operador / Operação -->
+            <div>
+                <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    <i class="fas fa-user-gear text-blue-400 mr-1"></i> Operador / Requisitante *
+                </label>
+                <input type="text" id="solicitante" required placeholder="Ex: Pátio Principal / Nome" 
+                       class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition">
+            </div>
+
+            <!-- Veículo e Posição (Lado a Lado) -->
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        <i class="fas fa-truck text-blue-400 mr-1"></i> Placa / Veículo *
+                    </label>
+                    <input type="text" id="placa" required uppercase placeholder="Ex: ABC1D23" 
+                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-3 text-sm font-mono uppercase text-white focus:outline-none focus:border-blue-500 transition">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        <i class="fas fa-bullseye text-blue-400 mr-1"></i> Posição *
+                    </label>
+                    <input type="text" id="posicao" required uppercase placeholder="Ex: E1R1, E2L1" 
+                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-3 text-sm font-mono uppercase text-white focus:outline-none focus:border-blue-500 transition">
+                </div>
+            </div>
+
+            <!-- Odômetro / Km -->
+            <div>
+                <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    <i class="fas fa-gauge text-blue-400 mr-1"></i> Km Atual do Veículo *
+                </label>
+                <input type="number" id="kmVeiculo" required placeholder="Ex: 185200" 
+                       class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition">
+            </div>
+
+            <!-- Tipo de Ação -->
+            <div>
+                <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    <i class="fas fa-arrows-rotate text-blue-400 mr-1"></i> Tipo de Serviço *
+                </label>
+                <select id="tipoAcao" required onchange="ajustarCamposPorAcao()"
+                        class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition">
+                    <option value="troca">Troca / Substituição de Pneu</option>
+                    <option value="medicao">Apenas Medição de Sulco</option>
+                    <option value="reforma">Retirar para Envio à Reforma</option>
+                    <option value="descarte">Retirar para Descarte / Sucata</option>
+                </select>
+            </div>
+
+            <hr class="border-slate-800 my-2">
+
+            <!-- Pneu Retirado (Saindo) -->
+            <div id="box-pneu-saindo" class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[11px] font-bold text-rose-400 uppercase tracking-wider mb-1">
+                            Nº Fogo Retirado
+                        </label>
+                        <input type="text" id="pneuSaindoFogo" placeholder="Ex: 323" 
+                               class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-rose-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-rose-400 uppercase tracking-wider mb-1">
+                            Sulco Medido (mm)
+                        </label>
+                        <input type="number" step="0.1" id="sulcoSaindo" placeholder="Ex: 3.5" 
+                               class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-rose-500 transition">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pneu Instalado (Entrando) -->
+            <div id="box-pneu-entrando" class="space-y-3">
+                <div>
+                    <label class="block text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-1">
+                        Nº Fogo Colocado / Montado
+                    </label>
+                    <input type="text" id="pneuEntrandoFogo" placeholder="Ex: 085" 
+                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-emerald-500 transition">
+                </div>
+            </div>
+
+            <!-- Observação -->
+            <div>
+                <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Observações / Motivo
+                </label>
+                <textarea id="observacao" rows="2" placeholder="Ex: Pneu com corte lateral ou desgastado no ombro..." 
+                          class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition resize-none"></textarea>
+            </div>
+
+            <!-- Botão Enviar -->
+            <button type="submit" id="btn-enviar" 
+                    class="w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-sm tracking-wider shadow-lg transition flex items-center justify-center gap-2">
+                <i class="fas fa-paper-plane"></i> ENVIAR SOLICITAÇÃO
+            </button>
+        </form>
+
+        <!-- Toast / Notificação de Sucesso -->
+        <div id="toast-sucesso" class="hidden bg-emerald-950/90 border border-emerald-500/40 text-emerald-200 p-4 rounded-2xl text-center space-y-1 shadow-2xl animate-fade-in">
+            <i class="fas fa-circle-check text-2xl text-emerald-400"></i>
+            <p class="font-bold text-sm text-white">Solicitação Enviada!</p>
+            <p class="text-xs text-emerald-300">A troca aguarda validação no painel de gestão.</p>
+        </div>
+
+    </main>
+
+    <script>
+        // -------------------------------------------------------------
+        // 1. CONFIGURAÇÃO DO FIREBASE (Copie as credenciais do seu app.js)
+        // -------------------------------------------------------------
+        const firebaseConfig = {
+            // SUBSTITUA COM AS MESMAS CREDENCIAIS DO SEU APP.JS
+            apiKey: "SUA_API_KEY",
+            authDomain: "SEU_PROJECT_ID.firebaseapp.com",
+            databaseURL: "https://SEU_PROJECT_ID-default-rtdb.firebaseio.com",
+            projectId: "SEU_PROJECT_ID",
+            storageBucket: "SEU_PROJECT_ID.appspot.com",
+            messagingSenderId: "SEU_SENDER_ID",
+            appId: "SEU_APP_ID"
+        };
+
+        // Inicializa o Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const database = firebase.database();
+
+        // -------------------------------------------------------------
+        // 2. DINÂMICA DO FORMULÁRIO
+        // -------------------------------------------------------------
+        function ajustarCamposPorAcao() {
+            const acao = document.getElementById('tipoAcao').value;
+            const boxSaindo = document.getElementById('box-pneu-saindo');
+            const boxEntrando = document.getElementById('box-pneu-entrando');
+
+            if (acao === 'medicao') {
+                boxSaindo.classList.remove('hidden');
+                boxEntrando.classList.add('hidden');
+            } else if (acao === 'reforma' || acao === 'descarte') {
+                boxSaindo.classList.remove('hidden');
+                boxEntrando.classList.add('hidden');
+            } else { // 'troca'
+                boxSaindo.classList.remove('hidden');
+                boxEntrando.classList.remove('hidden');
+            }
+        }
+
+        // -------------------------------------------------------------
+        // 3. ENVIO PARA O REALTIME DATABASE (`/solicitacoes`)
+        // -------------------------------------------------------------
+        function enviarSolicitacao(e) {
+            e.preventDefault();
+
+            const btn = document.getElementById('btn-enviar');
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ENVIANDO...`;
+
+            const solicitacao = {
+                data: new Date().toISOString(),
+                timestamp: firebase.database.ServerValue.TIMESTAMP,
+                solicitante: document.getElementById('solicitante').value.trim(),
+                placa: document.getElementById('placa').value.trim().toUpperCase(),
+                posicao: document.getElementById('posicao').value.trim().toUpperCase(),
+                kmVeiculo: Number(document.getElementById('kmVeiculo').value),
+                tipoAcao: document.getElementById('tipoAcao').value,
+                pneuSaindoFogo: document.getElementById('pneuSaindoFogo').value.trim(),
+                sulcoSaindo: document.getElementById('sulcoSaindo').value ? Number(document.getElementById('sulcoSaindo').value) : null,
+                pneuEntrandoFogo: document.getElementById('pneuEntrandoFogo').value.trim(),
+                observacao: document.getElementById('observacao').value.trim(),
+                status: 'pendente'
+            };
+
+            // Salva no nó /solicitacoes no Firebase
+            database.ref('solicitacoes').push(solicitacao)
+                .then(() => {
+                    // Exibe feedback
+                    const toast = document.getElementById('toast-sucesso');
+                    toast.classList.remove('hidden');
+
+                    // Reseta formulário e restaura botão
+                    document.getElementById('form-patio').reset();
+                    ajustarCamposPorAcao();
+                    btn.disabled = false;
+                    btn.innerHTML = `<i class="fas fa-paper-plane"></i> ENVIAR SOLICITAÇÃO`;
+
+                    // Esconde aviso após 4 segundos
+                    setTimeout(() => {
+                        toast.classList.add('hidden');
+                    }, 4000);
+                })
+                .catch((error) => {
+                    alert('Erro ao enviar solicitação: ' + error.message);
+                    btn.disabled = false;
+                    btn.innerHTML = `<i class="fas fa-paper-plane"></i> ENVIAR SOLICITAÇÃO`;
+                });
+        }
+    </script>
+</body>
+</html>
