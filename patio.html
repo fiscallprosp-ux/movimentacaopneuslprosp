@@ -53,7 +53,7 @@
         <div class="bg-lprosp-purple/20 border border-lprosp-purple/50 rounded-2xl p-3.5 flex items-start gap-3 shadow-md">
             <i class="fas fa-circle-info text-lprosp-blue text-base mt-0.5"></i>
             <p class="text-xs text-slate-200 leading-relaxed">
-                Adicione todos os pneus movimentados no conjunto antes de enviar a ordem.
+                Selecione o eixo, lado e posição corretos para garantir o mapeamento exato da frota.
             </p>
         </div>
 
@@ -89,18 +89,42 @@
                 <i class="fas fa-plus-circle text-sm"></i> 2. Registrar Movimentação do Pneu
             </h2>
 
-            <div class="grid grid-cols-2 gap-2">
+            <!-- Pertence ao veículo -->
+            <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Pertence ao *</label>
+                <select id="itemVeiculo" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lprosp-green">
+                    <option value="Cavalo">Cavalo</option>
+                    <option value="Carreta">Carreta</option>
+                </select>
+            </div>
+
+            <!-- SELEÇÃO PADRONIZADA DE POSIÇÃO (Eixo, Lado, Posição) -->
+            <div class="grid grid-cols-3 gap-2">
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Pertence ao *</label>
-                    <select id="itemVeiculo" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lprosp-green">
-                        <option value="Cavalo">Cavalo</option>
-                        <option value="Carreta">Carreta</option>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Eixo *</label>
+                    <select id="itemEixo" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-lprosp-green">
+                        <option value="Eixo 1">Eixo 1</option>
+                        <option value="Eixo 2">Eixo 2</option>
+                        <option value="Eixo 3">Eixo 3</option>
+                        <option value="Eixo 4">Eixo 4</option>
+                        <option value="Eixo 5">Eixo 5</option>
+                        <option value="Eixo 6">Eixo 6</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Posição *</label>
-                    <input type="text" id="itemPosicao" placeholder="Ex: E1R1, E2L1" 
-                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono uppercase text-white focus:outline-none focus:border-lprosp-green">
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Lado *</label>
+                    <select id="itemLado" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-lprosp-green">
+                        <option value="Esquerdo">Esquerdo (LE)</option>
+                        <option value="Direito">Direito (LD)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Montagem *</label>
+                    <select id="itemMontagem" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-lprosp-green">
+                        <option value="Simples">Simples (1 pneu)</option>
+                        <option value="Externo">Externo</option>
+                        <option value="Interno">Interno</option>
+                    </select>
                 </div>
             </div>
 
@@ -209,16 +233,20 @@
         }
 
         function adicionarPneuNaLista() {
-            const posicao = document.getElementById('itemPosicao').value.trim();
-            if (!posicao) {
-                alert('Informe a Posição do pneu (ex: E1R1).');
-                return;
-            }
+            const eixo = document.getElementById('itemEixo').value;
+            const lado = document.getElementById('itemLado').value;
+            const montagem = document.getElementById('itemMontagem').value;
+            
+            // Monta a posição unificada e padronizada (Ex: "Eixo 2 - Direito (Externo)")
+            const posicaoPadronizada = `${eixo} - ${lado} (${montagem})`;
 
             const item = {
                 id: Date.now(),
                 veiculoTipo: document.getElementById('itemVeiculo').value,
-                posicao: posicao.toUpperCase(),
+                eixo: eixo,
+                lado: lado,
+                montagem: montagem,
+                posicao: posicaoPadronizada,
                 tipoAcao: document.getElementById('itemTipoAcao').value,
                 fogoSaindo: document.getElementById('itemFogoSaindo').value.trim(),
                 sulcoSaindo: document.getElementById('itemSulcoSaindo').value ? Number(document.getElementById('itemSulcoSaindo').value) : null,
@@ -228,7 +256,7 @@
 
             pneusAdicionados.push(item);
 
-            document.getElementById('itemPosicao').value = '';
+            // Limpa campos de fogo/sulco/obs, mantendo eixo/lado para facilitar se for mexer no mesmo eixo
             document.getElementById('itemFogoSaindo').value = '';
             document.getElementById('itemSulcoSaindo').value = '';
             document.getElementById('itemFogoEntrando').value = '';
@@ -264,7 +292,7 @@
             container.innerHTML = pneusAdicionados.map((pneu) => `
                 <div class="bg-slate-800 border border-slate-700/80 rounded-xl p-3 flex justify-between items-center text-xs">
                     <div class="space-y-1">
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 flex-wrap">
                             <span class="bg-lprosp-purple text-white font-bold px-1.5 py-0.5 rounded text-[10px]">${pneu.veiculoTipo}</span>
                             <span class="font-mono font-bold text-lprosp-blue">${pneu.posicao}</span>
                             <span class="text-slate-400 capitalize">(${pneu.tipoAcao})</span>
