@@ -21,7 +21,6 @@ window.auth = firebase.auth();
 // ====================================================
 // ESTADO GLOBAL DA APLICAÇÃO
 // ====================================================
-// Limite recomendado de reformas por pneu (ajuste conforme a política da empresa/fabricante)
 const LIMITE_REFORMAS_RECOMENDADO = 2;
 
 const state = {
@@ -55,7 +54,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Vincula automaticamente eventos de clique caso os botões existam na interface
+    // Fechar modal ao pressionar ESC
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeModal();
+    });
+
+    // Fechar modal ao clicar no fundo
+    const modalContainer = document.getElementById('modal-container');
+    if (modalContainer) {
+        modalContainer.addEventListener('click', (e) => {
+            if (e.target === modalContainer) closeModal();
+        });
+    }
+
     vincularEventosNavegacao();
 });
 
@@ -115,6 +126,7 @@ function renderLoginView() {
         </div>
     `;
 }
+
 function handleLogin(e) {
     e.preventDefault();
     let userInput = document.getElementById('login-username').value.trim().toLowerCase();
@@ -126,7 +138,6 @@ function handleLogin(e) {
         .catch(err => showToast("Erro de acesso: " + traduzirErroAuth(err), "error"));
 }
 
-// Traduz os códigos de erro mais comuns do Firebase Auth para mensagens em português
 function traduzirErroAuth(err) {
     const mensagens = {
         'auth/invalid-credential': 'usuário ou senha incorretos.',
@@ -144,14 +155,13 @@ function handleLogout() {
     window.auth.signOut();
 }
 
-// Extrai um nome de usuário legível a partir do e-mail logado (ex: lprosp@lprosp.com -> lprosp)
 function getUsuarioAtual() {
     if (!state.user || !state.user.email) return 'desconhecido';
     return state.user.email.split('@')[0];
 }
 
 // ====================================================
-// NAVEGAÇÃO & PAINEL SUPERIOR (CORRIGIDO E ROBUSTO)
+// NAVEGAÇÃO & PAINEL SUPERIOR
 // ====================================================
 function updateQuickStats() {
     const elUso = document.getElementById('stat-em-uso');
@@ -166,16 +176,14 @@ function updateQuickStats() {
 function switchTab(tab) {
     state.currentTab = tab;
     
-    // Procura por ID ou por texto/conteúdo nos botões do cabeçalho superior para garantir o destaque visual
-    const botoes = document.querySelectorAll('button, div[onclick*="switchTab"]');
-    botoes.forEach(btn => {
-        const onclickAttr = btn.getAttribute('onclick') || '';
-        if (onclickAttr.includes(tab)) {
-            btn.classList.remove('bg-slate-800', 'text-slate-400');
-            btn.classList.add('bg-blue-600', 'text-white', 'shadow-md');
-        } else if (onclickAttr.includes('switchTab')) {
-            btn.classList.remove('bg-blue-600', 'text-white', 'shadow-md');
-            btn.classList.add('bg-slate-800', 'text-slate-400');
+    ['carretas', 'pneus', 'analise'].forEach(t => {
+        const btn = document.getElementById(`tab-${t}`);
+        if (btn) {
+            if (t === tab) {
+                btn.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 bg-blue-600 text-white shadow-sm";
+            } else {
+                btn.className = "px-4 py-1.5 rounded-lg text-xs font-bold font-heading transition-all duration-150 flex items-center gap-2 text-slate-400 hover:text-white";
+            }
         }
     });
 
@@ -183,7 +191,6 @@ function switchTab(tab) {
 }
 
 function vincularEventosNavegacao() {
-    // Garante que o botão "Nova Carreta" / "+ Novo Veículo" funcione globalmente
     document.querySelectorAll('button').forEach(btn => {
         const texto = btn.innerText.toLowerCase();
         if (texto.includes('nova carreta') || texto.includes('novo veículo') || texto.includes('novo veiculo')) {
@@ -227,9 +234,6 @@ function calcularMetricasPneu(pneu) {
     }
     const kmTotal = (pneu.kmRodadoTotal || 0) + kmEmAndamento;
 
-    // Se não sabemos o valor pago E não houve custo de reforma registrado, o custo é
-    // DESCONHECIDO (null) — não pode ser tratado como zero, senão o pneu pareceria
-    // "de graça" e distorceria o ranking de custo por km.
     const custoConhecido = pneu.valorPago != null || (pneu.custoReformasTotal || 0) > 0;
     const custoTotal = custoConhecido ? (pneu.valorPago || 0) + (pneu.custoReformasTotal || 0) : null;
     const custoPorKm = (custoTotal !== null && kmTotal > 0) ? custoTotal / kmTotal : null;
@@ -317,9 +321,14 @@ function renderVeiculosView(container) {
                                         <span class="text-xs text-slate-400 ml-2">${escapeHtml(veiculo.modelo || '')} • ${veiculo.kmAtual || 0} KM</span>
                                     </div>
                                 </div>
-                                <button onclick="deletarVeiculo('${veiculo.id}', '${veiculo.placa}')" class="text-slate-500 hover:text-red-400 p-2">
-                                    <i class="fas fa-trash-can"></i>
-                                </button>
+                                <div class="flex items-center gap-2">
+                                    <button onclick="showEditarKmVeiculoModal('${veiculo.id}')" title="Atualizar KM" class="text-slate-400 hover:text-blue-400 p-2">
+                                        <i class="fas fa-gauge-high"></i>
+                                    </button>
+                                    <button onclick="deletarVeiculo('${veiculo.id}', '${veiculo.placa}')" title="Excluir Veículo" class="text-slate-500 hover:text-red-400 p-2">
+                                        <i class="fas fa-trash-can"></i>
+                                    </button>
+                                </div>
                             </div>
 
                             <div class="relative max-w-lg mx-auto py-4">
@@ -373,16 +382,16 @@ function renderVeiculosView(container) {
             </div>
 
             <div class="xl:col-span-4">
-                <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm sticky top-6">
+                <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm sticky top-20">
                     <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
                         <h3 class="font-bold text-slate-800 text-sm">ESTOQUE DE PNEUS (${pneusEstoque.length})</h3>
-                        <span class="text-[10px] text-slate-400 font-medium">Arraste para o eixo</span>
+                        <span class="text-[10px] text-slate-400 font-medium">Arraste ou clique no eixo</span>
                     </div>
 
                     <input type="text" placeholder="Buscar por nº de fogo..." oninput="filterEstoqueVisual(this.value)" 
                            class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs mb-4 focus:outline-none focus:border-blue-600">
 
-                    <div id="visual-estoque-grid" class="grid grid-cols-2 gap-2.5 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
+                    <div id="visual-estoque-grid" class="grid grid-cols-2 gap-2.5 max-h-[calc(100vh-240px)] overflow-y-auto pr-1">
                         ${pneusEstoque.length === 0 ? '<p class="col-span-2 text-center text-slate-400 text-xs py-8">Nenhum pneu em estoque.</p>' :
                         pneusEstoque.map(pneu => {
                             const noLimite = (pneu.qtdReformas || 0) >= LIMITE_REFORMAS_RECOMENDADO;
@@ -403,14 +412,15 @@ function renderVeiculosView(container) {
 }
 
 // ====================================================
-// SLOT DO PNEU
+// SLOT DO PNEU (SUPORTE DRAG & DROP + CLIQUE)
 // ====================================================
 function renderSlotPneu(veiculoId, pos, pneusDoVeiculo) {
     const pneu = pneusDoVeiculo.find(p => p.posicao === pos);
     return `
         <div ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToSlot(event, '${veiculoId}', '${pos}')"
+             onclick="handleSlotClick('${veiculoId}', '${pos}', '${pneu ? pneu.id : ''}')"
              class="w-12 h-20 rounded-lg border-2 ${pneu ? ((pneu.sulcoAtual ?? 99) <= 3 ? 'border-red-500 bg-red-950/60' : 'border-blue-500 bg-blue-950/60') : 'border-dashed border-slate-700 bg-slate-800/40'} 
-             flex flex-col items-center justify-center p-1 transition-all relative group cursor-pointer">
+             flex flex-col items-center justify-center p-1 transition-all relative group cursor-pointer hover:border-blue-400">
             ${pneu ? `
                 <div draggable="true" ondragstart="handleDragStart(event, '${pneu.id}')" class="text-center w-full">
                     <span class="block font-black text-[11px] text-white leading-tight font-mono">${escapeHtml(pneu.fuego)}</span>
@@ -422,6 +432,128 @@ function renderSlotPneu(veiculoId, pos, pneusDoVeiculo) {
             `}
         </div>
     `;
+}
+
+function handleSlotClick(veiculoId, posicao, pneuId) {
+    const veiculo = state.veiculos.find(v => v.id === veiculoId);
+    if (!veiculo) return;
+
+    if (pneuId) {
+        const pneu = state.pneus.find(p => p.id === pneuId);
+        if (!pneu) return;
+
+        openModal(`
+            <div class="p-6">
+                <h3 class="text-lg font-bold text-slate-800 mb-1">Pneu Fogo Nº ${escapeHtml(pneu.fuego)}</h3>
+                <p class="text-xs text-slate-500 mb-4">Montado no veículo <b>${escapeHtml(veiculo.placa)}</b> na posição <b>${posicao}</b>.</p>
+                
+                <div class="space-y-2">
+                    <button onclick="closeModal(); showDesmontarModal(state.pneus.find(p=>p.id==='${pneu.id}'), 'Estoque')" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 p-3 rounded-xl text-xs font-bold flex items-center justify-between">
+                        <span><i class="fas fa-boxes-stacked mr-2 text-blue-600"></i> Desmontar para Estoque</span>
+                        <i class="fas fa-chevron-right text-slate-400"></i>
+                    </button>
+                    <button onclick="closeModal(); showDesmontarModal(state.pneus.find(p=>p.id==='${pneu.id}'), 'Reforma')" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 p-3 rounded-xl text-xs font-bold flex items-center justify-between">
+                        <span><i class="fas fa-wrench mr-2 text-amber-500"></i> Enviar para Reforma</span>
+                        <i class="fas fa-chevron-right text-slate-400"></i>
+                    </button>
+                    <button onclick="closeModal(); showDesmontarModal(state.pneus.find(p=>p.id==='${pneu.id}'), 'Descartado')" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 p-3 rounded-xl text-xs font-bold flex items-center justify-between">
+                        <span><i class="fas fa-trash-can mr-2 text-red-500"></i> Descartar / Sucata</span>
+                        <i class="fas fa-chevron-right text-slate-400"></i>
+                    </button>
+                    <button onclick="closeModal(); showHistoricoPneu('${pneu.id}')" class="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 p-3 rounded-xl text-xs font-bold flex items-center justify-between">
+                        <span><i class="fas fa-clock-rotate-left mr-2"></i> Ver Histórico Completo</span>
+                        <i class="fas fa-chevron-right text-slate-400"></i>
+                    </button>
+                </div>
+
+                <div class="flex justify-end mt-6">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">FECHAR</button>
+                </div>
+            </div>
+        `);
+    } else {
+        const pneusEstoque = state.pneus.filter(p => p.status === 'Estoque');
+        
+        if (pneusEstoque.length === 0) {
+            showToast("Não há pneus disponíveis no estoque para montagem.", "error");
+            return;
+        }
+
+        openModal(`
+            <div class="p-6">
+                <h3 class="text-lg font-bold text-slate-800 mb-1">Montar Pneu</h3>
+                <p class="text-xs text-slate-500 mb-4">Veículo: <b>${escapeHtml(veiculo.placa)}</b> | Posição: <b>${posicao}</b></p>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">SELECIONE O PNEU DO ESTOQUE</label>
+                        <select id="select-pneu-montar" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 font-mono">
+                            ${pneusEstoque.map(p => `
+                                <option value="${p.id}">
+                                    Fogo: ${escapeHtml(p.fuego)} - ${escapeHtml(p.marca || '')} (${p.sulcoAtual ?? '-'} mm)
+                                </option>
+                            `).join('')}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL DO VEÍCULO</label>
+                        <input type="number" id="montar-km-click" value="${veiculo.kmAtual || 0}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800" required>
+                    </div>
+
+                    <div class="flex justify-end gap-2 mt-6">
+                        <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">CANCELAR</button>
+                        <button type="button" onclick="confirmarMontagemClick('${veiculo.id}', '${posicao}')" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">CONFIRMAR MONTAGEM</button>
+                    </div>
+                </div>
+            </div>
+        `);
+    }
+}
+
+function confirmarMontagemClick(veiculoId, posicao) {
+    const pneuId = document.getElementById('select-pneu-montar').value;
+    const km = parseInt(document.getElementById('montar-km-click').value);
+    
+    if (!pneuId) {
+        showToast("Selecione um pneu válido.", "error");
+        return;
+    }
+
+    const pneu = state.pneus.find(p => p.id === pneuId);
+    const veiculo = state.veiculos.find(v => v.id === veiculoId);
+    if (!pneu || !veiculo) { closeModal(); return; }
+
+    if (km < (veiculo.kmAtual || 0)) {
+        showToast(`Atenção: KM informado (${km}) é menor que o KM atual do veículo (${veiculo.kmAtual || 0}).`, "error");
+        return;
+    }
+
+    const updates = {};
+    updates[`pneus/${pneuId}/status`] = 'Em Uso';
+    updates[`pneus/${pneuId}/veiculoId`] = veiculoId;
+    updates[`pneus/${pneuId}/posicao`] = posicao;
+    updates[`pneus/${pneuId}/kmInstalacaoAtual`] = km;
+    updates[`veiculos/${veiculoId}/kmAtual`] = km;
+
+    const histRef = window.rtdb.ref('historico').push();
+    updates[`historico/${histRef.key}`] = {
+        pneuId: pneuId,
+        fuego: pneu.fuego,
+        tipo: 'Montagem',
+        data: Date.now(),
+        veiculoId: veiculoId,
+        placa: veiculo.placa,
+        posicao: posicao,
+        kmVeiculo: km,
+        sulco: pneu.sulcoAtual ?? null,
+        usuario: getUsuarioAtual()
+    };
+
+    window.rtdb.ref().update(updates).then(() => {
+        closeModal();
+        showToast(`Pneu ${pneu.fuego} montado na posição ${posicao}!`, "success");
+    }).catch(err => showToast("Erro ao gravar: " + err.message, "error"));
 }
 
 // ====================================================
@@ -508,7 +640,7 @@ function confirmarMontagem(e, pneuId, veiculoId, posicao) {
     window.rtdb.ref().update(updates).then(() => {
         closeModal();
         showToast(`Pneu montado na posição ${posicao}!`, "success");
-    });
+    }).catch(err => showToast("Erro ao gravar: " + err.message, "error"));
 }
 
 function handleDropToZone(e, destinoStatus) {
@@ -609,7 +741,7 @@ function confirmarMovimentacao(e, pneuId, destino) {
     window.rtdb.ref().update(updates).then(() => {
         closeModal();
         showToast(`Pneu movido para ${destino}!`, "success");
-    });
+    }).catch(err => showToast("Erro ao gravar: " + err.message, "error"));
 }
 
 function filterEstoqueVisual(term) {
@@ -621,10 +753,8 @@ function filterEstoqueVisual(term) {
 }
 
 // ====================================================
-// MODAL DE VEÍCULO / NOVA CARRETA
+// MODAL DE VEÍCULO / ATUALIZAÇÃO DE KM
 // ====================================================
-// Alias: o botão global "Nova Carreta" no header (index.html) chama showAddCarretaModal(),
-// que não existia antes e dependia apenas do hack de correspondência de texto em vincularEventosNavegacao().
 function showAddCarretaModal() {
     showAddVeiculoModal();
 }
@@ -696,7 +826,46 @@ function salvarVeiculo(e) {
     }).then(() => {
         closeModal();
         showToast("Veículo cadastrado!", "success");
-    });
+    }).catch(err => showToast("Erro ao gravar: " + err.message, "error"));
+}
+
+function showEditarKmVeiculoModal(veiculoId) {
+    const veiculo = state.veiculos.find(v => v.id === veiculoId);
+    if (!veiculo) return;
+
+    openModal(`
+        <div class="p-6">
+            <h3 class="text-lg font-bold text-slate-800 mb-1">Atualizar Hodômetro / KM</h3>
+            <p class="text-xs text-slate-500 mb-4">Veículo: <b>${escapeHtml(veiculo.placa)}</b> (${escapeHtml(veiculo.modelo || '')})</p>
+            <form onsubmit="salvarKmVeiculo(event, '${veiculo.id}')" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">NOVO KM ATUAL</label>
+                    <input type="number" id="edit-veiculo-km" value="${veiculo.kmAtual || 0}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 font-bold" required>
+                </div>
+                <div class="flex justify-end gap-2 mt-6">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">CANCELAR</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">ATUALIZAR KM</button>
+                </div>
+            </form>
+        </div>
+    `);
+}
+
+function salvarKmVeiculo(e, veiculoId) {
+    e.preventDefault();
+    const novoKm = parseInt(document.getElementById('edit-veiculo-km').value);
+    const veiculo = state.veiculos.find(v => v.id === veiculoId);
+    if (!veiculo) { closeModal(); return; }
+
+    if (novoKm < (veiculo.kmAtual || 0)) {
+        showToast(`Atenção: O novo KM (${novoKm}) é menor que o KM anterior (${veiculo.kmAtual || 0}).`, "error");
+        return;
+    }
+
+    window.rtdb.ref(`veiculos/${veiculoId}/kmAtual`).set(novoKm).then(() => {
+        closeModal();
+        showToast(`KM do veículo ${veiculo.placa} atualizado para ${novoKm.toLocaleString('pt-BR')} KM!`, "success");
+    }).catch(err => showToast("Erro ao gravar: " + err.message, "error"));
 }
 
 function deletarVeiculo(id, placa) {
@@ -704,9 +873,6 @@ function deletarVeiculo(id, placa) {
         const veiculo = state.veiculos.find(v => v.id === id);
         const kmFinal = veiculo ? (veiculo.kmAtual || 0) : 0;
 
-        // Devolve para o estoque todos os pneus que estavam montados neste veículo,
-        // fechando o km rodado do ciclo com o último km conhecido do veículo,
-        // evitando que fiquem "órfãos" (Em Uso apontando para um veiculoId inexistente)
         const pneusDoVeiculo = state.pneus.filter(p => p.veiculoId === id);
         const updates = {};
         pneusDoVeiculo.forEach(p => {
@@ -736,7 +902,8 @@ function deletarVeiculo(id, placa) {
         updates[`veiculos/${id}`] = null;
 
         window.rtdb.ref().update(updates)
-            .then(() => showToast("Veículo removido! Pneus retornaram ao estoque.", "success"));
+            .then(() => showToast("Veículo removido! Pneus retornaram ao estoque.", "success"))
+            .catch(err => showToast("Erro ao excluir: " + err.message, "error"));
     }
 }
 
@@ -751,9 +918,9 @@ function renderPneusView(container) {
 
     container.innerHTML = `
         <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+            <div class="p-5 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3">
                 <h3 class="font-bold text-slate-800 text-sm">LISTA DE PNEUS (${pneusFiltrados.length})</h3>
-                <div class="flex gap-2">
+                <div class="flex flex-wrap gap-2">
                     <button onclick="showAddPneuHistoricoModal()" class="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5">
                         <i class="fas fa-clock-rotate-left"></i> Pneu Existente (com Histórico)
                     </button>
@@ -786,11 +953,11 @@ function renderPneusView(container) {
                             const qtdReformas = pneu.qtdReformas || 0;
                             const noLimite = qtdReformas >= LIMITE_REFORMAS_RECOMENDADO;
                             return `
-                                <tr>
+                                <tr class="hover:bg-slate-50/50 transition">
                                     <td class="p-3.5 font-black text-slate-800 font-mono">${escapeHtml(pneu.fuego)}</td>
                                     <td class="p-3.5 text-slate-600">${escapeHtml(pneu.marca || '-')} (${escapeHtml(pneu.medida || '-')})</td>
                                     <td class="p-3.5 font-semibold ${(pneu.sulcoAtual ?? 99) <= 3 ? 'text-red-600' : 'text-slate-800'}">${pneu.sulcoAtual ?? '-'} mm</td>
-                                    <td class="p-3.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">${pneu.status}</span></td>
+                                    <td class="p-3.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${pneu.status === 'Em Uso' ? 'bg-emerald-100 text-emerald-700' : (pneu.status === 'Reforma' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700')}">${pneu.status}</span></td>
                                     <td class="p-3.5 text-slate-600">${veiculo ? `${escapeHtml(veiculo.placa)} (${pneu.posicao})` : 'Estoque'}</td>
                                     <td class="p-3.5 text-slate-600">${kmTotal.toLocaleString('pt-BR')} km</td>
                                     <td class="p-3.5 text-slate-600">${custoPorKm !== null ? 'R$ ' + custoPorKm.toFixed(3) : '-'}</td>
@@ -828,14 +995,14 @@ function showHistoricoPneu(pneuId) {
             <h3 class="text-lg font-bold text-slate-800 mb-1">Histórico do Pneu ${escapeHtml(pneu.fuego)}</h3>
             <p class="text-xs text-slate-500 mb-4">${escapeHtml(pneu.marca || '-')} • ${escapeHtml(pneu.medida || '-')}</p>
 
-            <div class="grid grid-cols-4 gap-2 mb-4">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                 <div class="bg-slate-50 rounded-xl p-3 text-center">
                     <div class="text-[10px] text-slate-400 font-bold uppercase">Km Rodado</div>
                     <div class="text-sm font-black text-slate-800">${kmTotal.toLocaleString('pt-BR')}</div>
                 </div>
                 <div class="bg-slate-50 rounded-xl p-3 text-center">
                     <div class="text-[10px] text-slate-400 font-bold uppercase">Custo Total</div>
-                    <div class="text-sm font-black text-slate-800">R$ ${custoTotal.toFixed(2)}</div>
+                    <div class="text-sm font-black text-slate-800">R$ ${custoTotal !== null ? custoTotal.toFixed(2) : '-'}</div>
                 </div>
                 <div class="bg-slate-50 rounded-xl p-3 text-center">
                     <div class="text-[10px] text-slate-400 font-bold uppercase">Custo/Km</div>
@@ -1142,7 +1309,7 @@ function salvarPneuHistorico(e) {
         marca: marca,
         medida: medida,
         sulcoAtual: sulco,
-        sulcoInicial: sulco, // desconhecido para pneus retroativos; usamos o sulco atual como referência
+        sulcoInicial: sulco,
         status: status,
         veiculoId: veiculoId,
         posicao: posicao,
@@ -1176,8 +1343,8 @@ function salvarPneuHistorico(e) {
 
     window.rtdb.ref().update(updates).then(() => {
         closeModal();
-        showToast(`Pneu ${fuego} cadastrado com histórico (${kmAnterior.toLocaleString('pt-BR')} km e ${qtdReformas} reforma(s) já registrados)!`, "success");
-    });
+        showToast(`Pneu ${fuego} cadastrado com histórico!`, "success");
+    }).catch(err => showToast("Erro ao gravar: " + err.message, "error"));
 }
 
 function showAddPneuModal() {
@@ -1208,12 +1375,12 @@ function showAddPneuModal() {
                 <div class="bg-amber-50 border border-amber-200 rounded-xl p-3">
                     <label class="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" id="pneu-usado" onchange="toggleCampoUsado()" class="w-4 h-4">
-                        <span class="text-xs font-bold text-amber-800">Este(s) pneu(s) já é(são) usado(s) / já foi(ram) recapado(s) antes (não é novo de fábrica)</span>
+                        <span class="text-xs font-bold text-amber-800">Este(s) pneu(s) já é(são) usado(s) / já foi(ram) recapado(s) antes</span>
                     </label>
                     <div id="campo-recapagens" class="hidden mt-3">
                         <label class="block text-xs font-bold text-slate-600 mb-1">Nº DE RECAPAGENS QUE ELE(S) JÁ SOFREU(RAM)</label>
                         <input type="number" step="1" min="0" id="pneu-recapagens-existentes" value="0" class="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs">
-                        <p class="text-[10px] text-amber-700 mt-1">O km rodado e o histórico de reformas anteriores a hoje não existem no sistema — a contagem de km e custo/km começa a partir de agora.</p>
+                        <p class="text-[10px] text-amber-700 mt-1">A contagem de km e custo/km começará a partir de agora.</p>
                     </div>
                 </div>
 
@@ -1221,10 +1388,10 @@ function showAddPneuModal() {
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">VALOR PAGO POR UNIDADE (R$)</label>
                         <input type="number" step="0.01" id="pneu-valor" placeholder="Deixe em branco se não souber" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs">
-                        <p class="text-[10px] text-slate-400 mt-1">Deixe vazio para compras antigas sem valor conhecido — não entrará como custo zero.</p>
+                        <p class="text-[10px] text-slate-400 mt-1">Deixe vazio para compras antigas sem valor conhecido.</p>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">DATA DA COMPRA (OU DE HOJE, SE NÃO SOUBER)</label>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">DATA DA COMPRA</label>
                         <input type="date" id="pneu-data-compra" value="${hoje}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
                     </div>
                 </div>
@@ -1237,7 +1404,6 @@ function showAddPneuModal() {
     `);
 }
 
-// Mostra/esconde o campo de nº de recapagens conforme o checkbox "pneu usado"
 function toggleCampoUsado() {
     const campo = document.getElementById('campo-recapagens');
     const checkbox = document.getElementById('pneu-usado');
@@ -1278,8 +1444,6 @@ function salvarPneusEmLote(e) {
             marca: marca,
             medida: medida,
             sulcoAtual: sulco,
-            // Só grava sulco "inicial" (de pneu novo) quando realmente for novo de fábrica.
-            // Para pneu usado, não sabemos o sulco original de fábrica.
             sulcoInicial: usado ? null : sulco,
             status: 'Estoque',
             veiculoId: null,
@@ -1313,13 +1477,14 @@ function salvarPneusEmLote(e) {
         let msg = `${fuegos.length} pneu(s) cadastrado(s)!`;
         if (duplicados.length > 0) msg += ` (${duplicados.length} ignorado(s) por já existir: ${duplicados.join(', ')})`;
         showToast(msg, "success");
-    });
+    }).catch(err => showToast("Erro ao gravar: " + err.message, "error"));
 }
 
 function deletarPneu(id) {
     if (confirm(`Confirma excluir este pneu?`)) {
         window.rtdb.ref(`pneus/${id}`).remove()
-            .then(() => showToast("Pneu removido!", "success"));
+            .then(() => showToast("Pneu removido!", "success"))
+            .catch(err => showToast("Erro ao remover: " + err.message, "error"));
     }
 }
 
@@ -1346,10 +1511,13 @@ function showToast(message, type = 'info') {
 
     const toast = document.createElement('div');
     const bgColor = type === 'success' ? 'bg-emerald-600' : 'bg-red-600';
-    toast.className = `${bgColor} text-white px-4 py-3 rounded-xl shadow-lg text-xs font-bold flex items-center gap-2 mb-2`;
+    toast.className = `${bgColor} text-white px-4 py-3 rounded-xl shadow-lg text-xs font-bold flex items-center gap-2 mb-2 transition-all duration-300 opacity-100`;
     toast.innerHTML = message;
     toastContainer.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 function escapeHtml(str) {
