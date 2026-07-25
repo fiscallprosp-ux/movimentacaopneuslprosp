@@ -24,6 +24,23 @@ window.auth = firebase.auth();
 // Limite recomendado de reformas por pneu (ajuste conforme a política da empresa/fabricante)
 const LIMITE_REFORMAS_RECOMENDADO = 2;
 
+/** Rótulo visual do tipo de banda (Liso / Borrachudo / Misto) */
+function labelTipoBanda(tipo) {
+    if (!tipo) return '—';
+    return String(tipo);
+}
+
+function badgeTipoBanda(tipo) {
+    const t = (tipo || '').toLowerCase();
+    let cls = 'bg-slate-100 text-slate-600';
+    if (t === 'liso') cls = 'bg-sky-100 text-sky-700';
+    else if (t === 'borrachudo') cls = 'bg-emerald-100 text-emerald-700';
+    else if (t === 'misto') cls = 'bg-violet-100 text-violet-700';
+    return `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${cls}">${tipo ? escapeHtml(tipo) : '—'}</span>`;
+}
+
+
+
 const state = {
     user: null,
     veiculos: [],
@@ -378,6 +395,7 @@ function criarPneuProvisorio(fogo, status, extra) {
         kmRodadoTotal: 0,
         custoReformasTotal: 0,
         qtdReformas: 0,
+        tipoBanda: null,
         origem: 'provisorio',
         cadastroProvisorio: true,
         provisorioEm: Date.now(),
@@ -847,7 +865,7 @@ function renderVeiculosView(container) {
                                 <i class="fas fa-circle-notch text-2xl text-blue-600 mb-1"></i>
                                 <span class="font-black text-xs text-slate-800 font-mono">${escapeHtml(pneu.fuego)}</span>
                                 ${(pneu.cadastroProvisorio || pneu.origem === 'provisorio') ? '<span class="text-[9px] font-bold text-amber-600">PROVISÓRIO</span>' : ''}
-                                <span class="text-[10px] text-slate-500">${pneu.sulcoAtual ?? '-'} mm</span>
+                                <span class="text-[10px] text-slate-500">${pneu.tipoBanda || '—'}</span>
                             </div>
                         `;}).join('')}
                     </div>
@@ -862,14 +880,23 @@ function renderVeiculosView(container) {
 // ====================================================
 function renderSlotPneu(veiculoId, pos, pneusDoVeiculo) {
     const pneu = pneusDoVeiculo.find(p => p.posicao === pos);
+    const tipo = (pneu && pneu.tipoBanda) ? String(pneu.tipoBanda).toLowerCase() : '';
+    let borderCls = 'border-dashed border-slate-700 bg-slate-800/40';
+    if (pneu) {
+        if (tipo === 'liso') borderCls = 'border-sky-400 bg-sky-950/50';
+        else if (tipo === 'borrachudo') borderCls = 'border-emerald-400 bg-emerald-950/50';
+        else if (tipo === 'misto') borderCls = 'border-violet-400 bg-violet-950/50';
+        else borderCls = 'border-blue-500 bg-blue-950/60';
+    }
+    const tipoAbrev = !pneu ? '' : (tipo === 'liso' ? 'LIS' : tipo === 'borrachudo' ? 'BOR' : tipo === 'misto' ? 'MIS' : '—');
     return `
         <div ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropToSlot(event, '${veiculoId}', '${pos}')"
-             class="w-12 h-20 rounded-lg border-2 ${pneu ? ((pneu.sulcoAtual ?? 99) <= 3 ? 'border-red-500 bg-red-950/60' : 'border-blue-500 bg-blue-950/60') : 'border-dashed border-slate-700 bg-slate-800/40'} 
+             class="w-12 h-20 rounded-lg border-2 ${borderCls} 
              flex flex-col items-center justify-center p-1 transition-all relative group cursor-pointer">
             ${pneu ? `
                 <div draggable="true" ondragstart="handleDragStart(event, '${pneu.id}')" class="text-center w-full">
                     <span class="block font-black text-[11px] text-white leading-tight font-mono">${escapeHtml(pneu.fuego)}</span>
-                    <span class="block text-[9px] ${(pneu.sulcoAtual ?? 99) <= 3 ? 'text-red-400 font-bold' : 'text-slate-300'}">${pneu.sulcoAtual ?? '-'}mm</span>
+                    <span class="block text-[8px] text-slate-300 font-bold">${tipoAbrev}</span>
                 </div>
                 <div class="absolute -bottom-4 text-[8px] font-bold text-slate-400 font-mono">${pos}</div>
             ` : `
@@ -978,11 +1005,16 @@ function showDesmontarModal(pneu, destino) {
     openModal(`
         <div class="p-6">
             <h3 class="text-lg font-bold text-slate-800 mb-1">Mover Pneu ${escapeHtml(pneu.fuego)}</h3>
-            <p class="text-xs text-slate-500 mb-4">Destino selecionado: <b class="text-blue-600">${destino}</b>. Atualize o sulco e o KM do veículo neste momento.</p>
+            <p class="text-xs text-slate-500 mb-4">Destino selecionado: <b class="text-blue-600">${destino}</b>. Confirme o tipo de banda e o KM do veículo neste momento.</p>
             <form onsubmit="confirmarMovimentacao(event, '${pneu.id}', '${destino}')" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">SULCO MEDIDO (MM)</label>
-                    <input type="number" step="0.1" id="drag-sulco" value="${pneu.sulcoAtual || 10}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800" required>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">TIPO DE BANDA</label>
+                    <select id="drag-tipo-banda" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 font-bold">
+                        <option value="">—</option>
+                        <option value="Liso" ${pneu.tipoBanda === 'Liso' ? 'selected' : ''}>Liso</option>
+                        <option value="Borrachudo" ${pneu.tipoBanda === 'Borrachudo' ? 'selected' : ''}>Borrachudo</option>
+                        <option value="Misto" ${pneu.tipoBanda === 'Misto' ? 'selected' : ''}>Misto</option>
+                    </select>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL DO VEÍCULO</label>
@@ -1005,7 +1037,7 @@ function showDesmontarModal(pneu, destino) {
 
 function confirmarMovimentacao(e, pneuId, destino) {
     e.preventDefault();
-    const sulco = parseFloat(document.getElementById('drag-sulco').value);
+    const tipoBandaSel = document.getElementById('drag-tipo-banda') ? document.getElementById('drag-tipo-banda').value : '';
     const kmInput = document.getElementById('drag-km');
     const kmInformado = kmInput.value ? parseInt(kmInput.value) : null;
     const custoReformaInput = document.getElementById('drag-custo-reforma');
@@ -1028,7 +1060,7 @@ function confirmarMovimentacao(e, pneuId, destino) {
     const qtdReformasNova = destino === 'Reforma' ? (pneu.qtdReformas || 0) + 1 : (pneu.qtdReformas || 0);
 
     const updates = {};
-    updates[`pneus/${pneuId}/sulcoAtual`] = sulco;
+    if (tipoBandaSel) updates[`pneus/${pneuId}/tipoBanda`] = tipoBandaSel;
     updates[`pneus/${pneuId}/status`] = destino;
     updates[`pneus/${pneuId}/veiculoId`] = null;
     updates[`pneus/${pneuId}/posicao`] = null;
@@ -1055,7 +1087,8 @@ function confirmarMovimentacao(e, pneuId, destino) {
         posicao: pneu.posicao || null,
         kmVeiculo: kmInformado,
         kmRodadoCiclo: cicloKm,
-        sulco: sulco,
+        sulco: null,
+        tipoBanda: tipoBandaSel || pneu.tipoBanda || null,
         custo: custoReforma > 0 ? custoReforma : null,
         qtdReformas: destino === 'Reforma' ? qtdReformasNova : null,
         usuario: getUsuarioAtual()
@@ -1218,7 +1251,7 @@ function renderPneusView(container) {
                         <tr>
                             <th class="p-3.5">Nº Fogo</th>
                             <th class="p-3.5">Marca / Medida</th>
-                            <th class="p-3.5">Sulco</th>
+                            <th class="p-3.5">Tipo</th>
                             <th class="p-3.5">Status</th>
                             <th class="p-3.5">Veículo / Pos.</th>
                             <th class="p-3.5">Km Rodado</th>
@@ -1242,7 +1275,7 @@ function renderPneusView(container) {
                                         ${(pneu.cadastroProvisorio || pneu.origem === 'provisorio') ? '<span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700" title="Cadastro provisório — complete marca, medida e valor">PROVISÓRIO</span>' : ''}
                                     </td>
                                     <td class="p-3.5 text-slate-600">${escapeHtml(pneu.marca || '-')} (${escapeHtml(pneu.medida || '-')})</td>
-                                    <td class="p-3.5 font-semibold ${(pneu.sulcoAtual ?? 99) <= 3 ? 'text-red-600' : 'text-slate-800'}">${pneu.sulcoAtual ?? '-'} mm</td>
+                                    <td class="p-3.5">${badgeTipoBanda(pneu.tipoBanda)}</td>
                                     <td class="p-3.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">${pneu.status}</span></td>
                                     <td class="p-3.5 text-slate-600">${veiculo ? `${escapeHtml(veiculo.placa)} (${pneu.posicao})` : 'Estoque'}</td>
                                     <td class="p-3.5 text-slate-600">${kmTotal.toLocaleString('pt-BR')} km</td>
@@ -1283,7 +1316,7 @@ function showHistoricoPneu(pneuId) {
             ${(pneu.cadastroProvisorio || pneu.origem === 'provisorio') ? `
                 <div class="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold rounded-xl p-3 mb-4 flex items-center gap-2">
                     <i class="fas fa-triangle-exclamation"></i>
-                    Cadastro provisório (criado pelo pátio). Complete marca, medida e valor pago quando tiver os dados.
+                    Cadastro provisório (criado pelo pátio). Complete marca, medida, tipo de banda (Liso/Borrachudo/Misto) e valor quando tiver os dados.
                 </div>` : ''}
 
             <div class="grid grid-cols-4 gap-2 mb-4">
@@ -1326,7 +1359,7 @@ function showHistoricoPneu(pneuId) {
                             ${ev.posicao ? `<span>Posição: ${ev.posicao}</span>` : ''}
                             ${ev.kmVeiculo != null ? `<span>Km: ${ev.kmVeiculo.toLocaleString('pt-BR')}</span>` : ''}
                             ${ev.kmRodadoCiclo ? `<span>Rodou neste ciclo: ${ev.kmRodadoCiclo.toLocaleString('pt-BR')} km</span>` : ''}
-                            ${ev.sulco != null ? `<span>Sulco: ${ev.sulco} mm</span>` : ''}
+                            ${ev.tipoBanda ? `<span>Tipo: ${escapeHtml(ev.tipoBanda)}</span>` : (ev.sulco != null ? `<span>Sulco: ${ev.sulco} mm</span>` : '')}
                             ${ev.custo ? `<span>Custo: R$ ${ev.custo.toFixed(2)}</span>` : ''}
                         </div>
                     </div>
@@ -1481,8 +1514,13 @@ function showAddPneuHistoricoModal() {
                     </div>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">SULCO ATUAL (MM)</label>
-                    <input type="number" step="0.1" id="ph-sulco" placeholder="Ex: 8.0" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">TIPO DE BANDA *</label>
+                    <select id="ph-tipo-banda" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-bold" required>
+                        <option value="">Selecione...</option>
+                        <option value="Liso">Liso</option>
+                        <option value="Borrachudo">Borrachudo</option>
+                        <option value="Misto">Misto</option>
+                    </select>
                 </div>
 
                 <div class="border-t border-slate-100 pt-3">
@@ -1557,7 +1595,7 @@ function salvarPneuHistorico(e) {
     const fuego = document.getElementById('ph-fuego').value.trim();
     const marca = document.getElementById('ph-marca').value.trim();
     const medida = document.getElementById('ph-medida').value.trim();
-    const sulco = parseFloat(document.getElementById('ph-sulco').value);
+    const tipoBanda = document.getElementById('ph-tipo-banda').value;
     const kmAnterior = parseInt(document.getElementById('ph-km-anterior').value) || 0;
     const qtdReformas = parseInt(document.getElementById('ph-qtd-reformas').value) || 0;
     const valorPagoRaw = document.getElementById('ph-valor').value;
@@ -1599,8 +1637,9 @@ function salvarPneuHistorico(e) {
         fuego: fuego,
         marca: marca,
         medida: medida,
-        sulcoAtual: sulco,
-        sulcoInicial: sulco, // desconhecido para pneus retroativos; usamos o sulco atual como referência
+        sulcoAtual: null,
+        sulcoInicial: null,
+        tipoBanda: tipoBanda,
         status: status,
         veiculoId: veiculoId,
         posicao: posicao,
@@ -1627,7 +1666,8 @@ function salvarPneuHistorico(e) {
         posicao: posicao,
         kmVeiculo: status === 'Em Uso' ? kmVeiculoAtual : null,
         kmRodadoCiclo: kmAnterior > 0 ? kmAnterior : null,
-        sulco: sulco,
+        sulco: null,
+        tipoBanda: tipoBanda,
         qtdReformas: qtdReformas > 0 ? qtdReformas : null,
         usuario: getUsuarioAtual()
     };
@@ -1659,8 +1699,13 @@ function showAddPneuModal() {
                     </div>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">SULCO ATUAL (MEDIDO AGORA, EM MM)</label>
-                    <input type="number" step="0.1" id="pneu-sulco" value="15.0" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">TIPO DE BANDA *</label>
+                    <select id="pneu-tipo-banda" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-bold" required>
+                        <option value="">Selecione...</option>
+                        <option value="Liso">Liso</option>
+                        <option value="Borrachudo">Borrachudo</option>
+                        <option value="Misto">Misto</option>
+                    </select>
                 </div>
 
                 <div class="bg-amber-50 border border-amber-200 rounded-xl p-3">
@@ -1709,7 +1754,7 @@ function salvarPneusEmLote(e) {
     const fuegosRaw = document.getElementById('pneu-fuegos').value;
     const marca = document.getElementById('pneu-marca').value;
     const medida = document.getElementById('pneu-medida').value;
-    const sulco = parseFloat(document.getElementById('pneu-sulco').value);
+    const tipoBanda = document.getElementById('pneu-tipo-banda').value;
     const valorPagoRaw = document.getElementById('pneu-valor').value;
     const valorPago = valorPagoRaw === '' ? null : parseFloat(valorPagoRaw);
     const dataCompra = document.getElementById('pneu-data-compra').value;
@@ -1735,10 +1780,9 @@ function salvarPneusEmLote(e) {
             fuego: fuego,
             marca: marca,
             medida: medida,
-            sulcoAtual: sulco,
-            // Só grava sulco "inicial" (de pneu novo) quando realmente for novo de fábrica.
-            // Para pneu usado, não sabemos o sulco original de fábrica.
-            sulcoInicial: usado ? null : sulco,
+            sulcoAtual: null,
+            sulcoInicial: null,
+            tipoBanda: tipoBanda,
             status: 'Estoque',
             veiculoId: null,
             posicao: null,
@@ -1760,7 +1804,8 @@ function salvarPneusEmLote(e) {
             placa: null,
             posicao: null,
             kmVeiculo: null,
-            sulco: sulco,
+            sulco: null,
+            tipoBanda: tipoBanda,
             qtdReformas: usado && recapagensExistentes > 0 ? recapagensExistentes : null,
             usuario: getUsuarioAtual()
         };
