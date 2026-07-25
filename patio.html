@@ -68,15 +68,9 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-2">
-                <div>
-                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Km Atual *</label>
-                    <input type="number" id="kmVeiculo" required placeholder="Ex: 185200" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-lprosp-blue">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Operador *</label>
-                    <input type="text" id="solicitante" required placeholder="Seu nome" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-lprosp-blue">
-                </div>
+            <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Km Atual *</label>
+                <input type="number" id="kmVeiculo" required placeholder="Ex: 185200" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-lprosp-blue">
             </div>
         </div>
 
@@ -115,7 +109,7 @@
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Montagem *</label>
                     <select id="itemMontagem" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-lprosp-green">
-                        <option value="Simples">Simples (1 pneu)</option>
+                        <option value="Direcional">Direcional</option>
                         <option value="Externo">Externo</option>
                         <option value="Interno">Interno</option>
                     </select>
@@ -132,15 +126,9 @@
                 </select>
             </div>
 
-            <div id="box-pneu-saindo" class="grid grid-cols-2 gap-2">
-                <div>
-                    <label class="block text-[10px] font-bold text-lprosp-red uppercase mb-1">Nº Fogo Retirado</label>
-                    <input type="text" id="itemFogoSaindo" placeholder="Ex: 323" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-lprosp-red">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-bold text-lprosp-red uppercase mb-1">Sulco (mm)</label>
-                    <input type="number" step="0.1" id="itemSulcoSaindo" placeholder="Ex: 3.5" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lprosp-red">
-                </div>
+            <div id="box-pneu-saindo">
+                <label class="block text-[10px] font-bold text-lprosp-red uppercase mb-1">Nº Fogo Retirado</label>
+                <input type="text" id="itemFogoSaindo" placeholder="Ex: 323" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-lprosp-red">
             </div>
 
             <div id="box-pneu-entrando">
@@ -222,7 +210,7 @@
             const numEixo = m ? parseInt(m[1], 10) : 1;
             const isEsquerdo = String(lado).toLowerCase().includes('esquer');
             const isInterno = String(montagem).toLowerCase().includes('interno');
-            const isSimples = String(montagem).toLowerCase().includes('simples');
+            const isSimples = String(montagem).toLowerCase().includes('simples') || String(montagem).toLowerCase().includes('direcional');
 
             if (veiculoTipo === 'Cavalo' && numEixo === 1) {
                 return isEsquerdo ? 'E1R1' : 'E1R4';
@@ -253,9 +241,7 @@
                     posicaoCodigo: posicaoCodigo,
                     tipoAcao: document.getElementById('itemTipoAcao').value,
                     fogoSaindo: document.getElementById('itemFogoSaindo').value.trim(),
-                    sulcoSaindo: document.getElementById('itemSulcoSaindo').value
-                        ? Number(document.getElementById('itemSulcoSaindo').value)
-                        : null,
+                    sulcoSaindo: null,
                     fogoEntrando: document.getElementById('itemFogoEntrando').value.trim(),
                     observacao: document.getElementById('itemObs').value.trim()
                 };
@@ -263,7 +249,6 @@
                 pneusAdicionados.push(item);
 
                 document.getElementById('itemFogoSaindo').value = '';
-                document.getElementById('itemSulcoSaindo').value = '';
                 document.getElementById('itemFogoEntrando').value = '';
                 document.getElementById('itemObs').value = '';
 
@@ -308,7 +293,7 @@
                     '<span class="text-slate-400 capitalize">(' + pneu.tipoAcao + ')</span>' +
                     '</div>' +
                     '<div class="text-[11px] text-slate-300">' +
-                    (pneu.fogoSaindo ? '<span class="text-lprosp-red">Sai: #' + pneu.fogoSaindo + ' (' + (pneu.sulcoSaindo || '-') + 'mm)</span>' : '') +
+                    (pneu.fogoSaindo ? '<span class="text-lprosp-red">Sai: #' + pneu.fogoSaindo + '</span>' : '') +
                     (pneu.fogoSaindo && pneu.fogoEntrando ? ' | ' : '') +
                     (pneu.fogoEntrando ? '<span class="text-lprosp-green">Entra: #' + pneu.fogoEntrando + '</span>' : '') +
                     '</div>' +
@@ -324,14 +309,9 @@
         function enviarOrdemCompleta() {
             const placaCavalo = document.getElementById('placaCavalo').value.trim().toUpperCase();
             const kmVeiculo = document.getElementById('kmVeiculo').value;
-            const solicitante = document.getElementById('solicitante').value.trim();
 
             if (!placaCavalo || !kmVeiculo) {
                 alert('Preencha a Placa do Cavalo e o KM Atual.');
-                return;
-            }
-            if (!solicitante) {
-                alert('Informe o nome do operador.');
                 return;
             }
             if (pneusAdicionados.length === 0) {
@@ -349,7 +329,7 @@
                 placaCavalo: placaCavalo,
                 placaCarreta: document.getElementById('placaCarreta').value.trim().toUpperCase(),
                 kmVeiculo: Number(kmVeiculo),
-                solicitante: solicitante,
+                solicitante: null,
                 totalItens: pneusAdicionados.length,
                 itens: pneusAdicionados,
                 status: 'pendente'
