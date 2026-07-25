@@ -411,7 +411,7 @@ function criarPneuProvisorio(fogo, status, extra) {
  */
 function processarItemPatio(item, s, updates) {
     const placa = resolverPlacaSolicitacao(s, item);
-    const veiculo = placa ? state.veiculos.find(v => v.placa === placa) : null;
+    const veiculo = placa ? state.veiculos.find(v => String(v.placa || '').toUpperCase() === String(placa).toUpperCase()) : null;
     const tipoVeiculo = (veiculo && veiculo.tipo) || (item.veiculoTipo === 'Carreta' ? 'carreta' : 'cavalo');
     const posicaoCodigo = mapearPosicaoPatio(item, tipoVeiculo);
     const kmVeiculo = Number(s.kmVeiculo) || 0;
@@ -589,43 +589,91 @@ function processarItemPatio(item, s, updates) {
     return true;
 }
 
-function aprovarSolicitacao(id) {
-    const s = state.solicitacoes.find(x => x.id === id);
-    if (!s) return;
-
-    if (!confirm('Aprovar solicitação? Pneus ainda não cadastrados serão criados como provisórios para você completar depois.')) return;
-
-    let itens = Array.isArray(s.itens) && s.itens.length > 0
-        ? s.itens
-        : [{
-            veiculoTipo: 'Cavalo',
-            posicao: s.posicao,
-            posicaoCodigo: s.posicao,
-            tipoAcao: s.tipoAcao || 'troca',
-            fogoSaindo: s.pneuSaindoFogo,
-            sulcoSaindo: s.sulcoSaindo,
-            fogoEntrando: s.pneuEntrandoFogo,
-            observacao: s.observacao
-        }];
-
-    const updates = {};
-    updates[`solicitacoes/${id}/status`] = 'aprovada';
-    updates[`solicitacoes/${id}/aprovadoEm`] = Date.now();
-    updates[`solicitacoes/${id}/aprovadoPor`] = getUsuarioAtual();
-
-    itens.forEach(item => processarItemPatio(item, s, updates));
-
-    const provisorios = updates.__provisoriosCriados || [];
-    delete updates.__provisoriosCriados;
-
-    window.rtdb.ref().update(updates).then(() => {
-        if (provisorios.length > 0) {
-            const lista = provisorios.map(p => '#' + p.fuego).join(', ');
-            showToast('Aprovado! Pneu(s) provisório(s) criado(s): ' + lista + ' — complete marca/medida depois.', 'success');
+function sanitizarUpdatesFirebase(obj) {
+    const out = {};
+    Object.keys(obj).forEach(k => {
+        if (k.startsWith('__')) return; // auxiliares
+        const v = obj[k];
+        if (v === undefined) return;
+        if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+            const nested = {};
+            let has = false;
+            Object.keys(v).forEach(nk => {
+                if (v[nk] !== undefined) {
+                    nested[nk] = v[nk];
+                    has = true;
+                }
+            });
+            if (has) out[k] = nested;
         } else {
-            showToast('Solicitação processada e estoque integrado!', 'success');
+            out[k] = v;
         }
-    }).catch(e => showToast('Erro de processamento: ' + e.message, 'error'));
+    });
+    return out;
+}
+
+function aprovarSolicitacao(id) {
+    try {
+        const s = state.solicitacoes.find(x => x.id === id);
+        if (!s) {
+            showToast('Solicitação não encontrada.', 'error');
+            return;
+        }
+
+        if (!confirm('Aprovar solicitação? Pneus ainda não cadastrados serão criados como provisórios para você completar depois.')) return;
+
+        let itens = Array.isArray(s.itens) && s.itens.length > 0
+            ? s.itens
+            : [{
+                veiculoTipo: 'Cavalo',
+                posicao: s.posicao,
+                posicaoCodigo: s.posicao,
+                tipoAcao: s.tipoAcao || 'troca',
+                fogoSaindo: s.pneuSaindoFogo,
+                sulcoSaindo: s.sulcoSaindo,
+                fogoEntrando: s.pneuEntrandoFogo,
+                observacao: s.observacao
+            }];
+
+        const updates = {};
+        updates['solicitacoes/' + id + '/status'] = 'aprovada';
+        updates['solicitacoes/' + id + '/aprovadoEm'] = Date.now();
+        updates['solicitacoes/' + id + '/aprovadoPor'] = getUsuarioAtual();
+
+        itens.forEach(function (item) {
+            try {
+                processarItemPatio(item, s, updates);
+            } catch (errItem) {
+                console.error('Erro no item', item, errItem);
+                showToast('Erro ao processar item: ' + (errItem && errItem.message ? errItem.message : errItem), 'error');
+            }
+        });
+
+        const provisorios = updates.__provisoriosCriados || [];
+        delete updates.__provisoriosCriados;
+
+        const payload = sanitizarUpdatesFirebase(updates);
+        const qtdPaths = Object.keys(payload).length;
+        if (qtdPaths === 0) {
+            showToast('Nada para atualizar.', 'error');
+            return;
+        }
+
+        window.rtdb.ref().update(payload).then(function () {
+            if (provisorios.length > 0) {
+                const lista = provisorios.map(function (p) { return '#' + p.fuego; }).join(', ');
+                showToast('Aprovado! Pneu(s) provisório(s): ' + lista + ' — complete os dados depois.', 'success');
+            } else {
+                showToast('Solicitação processada e estoque integrado!', 'success');
+            }
+        }).catch(function (e) {
+            console.error('Firebase update error', e, payload);
+            showToast('Erro Firebase: ' + (e.code || '') + ' ' + e.message, 'error');
+        });
+    } catch (err) {
+        console.error('aprovarSolicitacao', err);
+        showToast('Erro ao aprovar: ' + (err && err.message ? err.message : err), 'error');
+    }
 }
 
 // ====================================================
@@ -679,8 +727,8 @@ function mapearPosicaoPatio(item, tipoVeiculo) {
 
     // Estepe vindo do pátio (Eixo = "Estepe 1" / "Estepe 2")
     const eixoStr = String(item.eixo || item.posicao || '');
-    if (/estepe\s*1/i.test(eixoStr) || /est\s*1/i.test(eixoStr)) return 'EST1';
-    if (/estepe\s*2/i.test(eixoStr) || /est\s*2/i.test(eixoStr)) return 'EST2';
+    if (/estepe\s*1/i.test(eixoStr) || /^EST\s*1$/i.test(eixoStr.trim())) return 'EST1';
+    if (/estepe\s*2/i.test(eixoStr) || /^EST\s*2$/i.test(eixoStr.trim())) return 'EST2';
 
     const eixoMatch = eixoStr.match(/(\d+)/);
     const numEixo = eixoMatch ? parseInt(eixoMatch[1], 10) : 1;
@@ -690,7 +738,7 @@ function mapearPosicaoPatio(item, tipoVeiculo) {
 
     const isEsquerdo = ladoRaw.includes('esquer');
     const isInterno = montagemRaw.includes('interno');
-    const isSimples = montagemRaw.includes('simples');
+    const isSimples = montagemRaw.includes('simples') || montagemRaw.includes('direcional');
 
     if ((tipoVeiculo === 'cavalo' || tipoVeiculo === 'Cavalo') && numEixo === 1) {
         return isEsquerdo ? 'E1R1' : 'E1R4';
@@ -773,9 +821,14 @@ function renderVeiculosView(container) {
                                         <span class="text-xs text-slate-400 ml-2">${escapeHtml(veiculo.modelo || '')} • ${veiculo.kmAtual || 0} KM</span>
                                     </div>
                                 </div>
-                                <button onclick="deletarVeiculo('${veiculo.id}', '${veiculo.placa}')" class="text-slate-500 hover:text-red-400 p-2">
-                                    <i class="fas fa-trash-can"></i>
-                                </button>
+                                <div class="flex items-center gap-1">
+                                    <button onclick="showEditVeiculoModal('${veiculo.id}')" title="Editar veículo" class="text-slate-500 hover:text-blue-400 p-2">
+                                        <i class="fas fa-pen-to-square"></i>
+                                    </button>
+                                    <button onclick="deletarVeiculo('${veiculo.id}', '${veiculo.placa}')" title="Excluir veículo" class="text-slate-500 hover:text-red-400 p-2">
+                                        <i class="fas fa-trash-can"></i>
+                                    </button>
+                                </div>
                             </div>
 
                             <div class="relative max-w-lg mx-auto py-4">
@@ -1185,6 +1238,81 @@ function salvarVeiculo(e) {
     });
 }
 
+function showEditVeiculoModal(veiculoId) {
+    const v = state.veiculos.find(x => x.id === veiculoId);
+    if (!v) return;
+    const tipo = v.tipo || 'carreta';
+    const eixos = v.eixos || 3;
+    openModal(`
+        <div class="p-6">
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Editar Veículo</h3>
+            <form onsubmit="salvarEdicaoVeiculo(event, '${v.id}')" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">TIPO</label>
+                    <select id="edit-veiculo-tipo" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-bold">
+                        <option value="cavalo" ${tipo === 'cavalo' ? 'selected' : ''}>Cavalo</option>
+                        <option value="carreta" ${tipo === 'carreta' ? 'selected' : ''}>Carreta</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">PLACA</label>
+                    <input type="text" id="edit-veiculo-placa" value="${escapeHtml(v.placa || '')}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-mono uppercase" required>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">MODELO</label>
+                        <input type="text" id="edit-veiculo-modelo" value="${escapeHtml(v.modelo || '')}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">QTD DE EIXOS</label>
+                        <select id="edit-veiculo-eixos" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs">
+                            <option value="2" ${eixos === 2 ? 'selected' : ''}>2 Eixos</option>
+                            <option value="3" ${eixos === 3 ? 'selected' : ''}>3 Eixos</option>
+                            <option value="4" ${eixos === 4 ? 'selected' : ''}>4 Eixos</option>
+                            <option value="5" ${eixos === 5 ? 'selected' : ''}>5 Eixos</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL</label>
+                    <input type="number" id="edit-veiculo-km" value="${v.kmAtual || 0}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs">
+                </div>
+                <p class="text-[10px] text-slate-400">Os pneus já montados permanecem no veículo. Ao mudar de carreta → cavalo, os estepes (EST1/EST2) deixam de aparecer no desenho — se houver pneu nessas posições, mova-os antes se quiser.</p>
+                <div class="flex justify-end gap-2 mt-6">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">CANCELAR</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">SALVAR ALTERAÇÕES</button>
+                </div>
+            </form>
+        </div>
+    `);
+}
+
+function salvarEdicaoVeiculo(e, veiculoId) {
+    e.preventDefault();
+    const tipo = document.getElementById('edit-veiculo-tipo').value;
+    const placa = document.getElementById('edit-veiculo-placa').value.toUpperCase().trim();
+    const modelo = document.getElementById('edit-veiculo-modelo').value.trim();
+    const eixos = parseInt(document.getElementById('edit-veiculo-eixos').value);
+    const kmAtual = parseInt(document.getElementById('edit-veiculo-km').value) || 0;
+
+    const outraPlaca = state.veiculos.some(v => v.id !== veiculoId && v.placa === placa);
+    if (outraPlaca) {
+        showToast(`Já existe outro veículo com a placa ${placa}!`, 'error');
+        return;
+    }
+
+    window.rtdb.ref(`veiculos/${veiculoId}`).update({
+        tipo: tipo,
+        placa: placa,
+        modelo: modelo,
+        eixos: eixos,
+        kmAtual: kmAtual
+    }).then(() => {
+        closeModal();
+        showToast('Veículo atualizado!', 'success');
+    }).catch(err => showToast('Erro ao salvar: ' + err.message, 'error'));
+}
+
 function deletarVeiculo(id, placa) {
     if (confirm(`Confirma a exclusão do veículo ${placa}? Os pneus montados nele voltarão para o estoque.`)) {
         const veiculo = state.veiculos.find(v => v.id === id);
@@ -1274,7 +1402,7 @@ function renderPneusView(container) {
                                         ${escapeHtml(pneu.fuego)}
                                         ${(pneu.cadastroProvisorio || pneu.origem === 'provisorio') ? '<span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700" title="Cadastro provisório — complete marca, medida e valor">PROVISÓRIO</span>' : ''}
                                     </td>
-                                    <td class="p-3.5 text-slate-600">${escapeHtml(pneu.marca || '-')} (${escapeHtml(pneu.medida || '-')})</td>
+                                    <td class="p-3.5 text-slate-600">${escapeHtml(pneu.marca || '-')} ${pneu.modelo ? '· ' + escapeHtml(pneu.modelo) : (pneu.medida ? '(' + escapeHtml(pneu.medida) + ')' : '')}</td>
                                     <td class="p-3.5">${badgeTipoBanda(pneu.tipoBanda)}</td>
                                     <td class="p-3.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">${pneu.status}</span></td>
                                     <td class="p-3.5 text-slate-600">${veiculo ? `${escapeHtml(veiculo.placa)} (${pneu.posicao})` : 'Estoque'}</td>
@@ -1312,7 +1440,7 @@ function showHistoricoPneu(pneuId) {
     openModal(`
         <div class="p-6 max-h-[80vh] overflow-y-auto">
             <h3 class="text-lg font-bold text-slate-800 mb-1">Histórico do Pneu ${escapeHtml(pneu.fuego)}</h3>
-            <p class="text-xs text-slate-500 mb-2">${escapeHtml(pneu.marca || '-')} • ${escapeHtml(pneu.medida || '-')}</p>
+            <p class="text-xs text-slate-500 mb-2">${escapeHtml(pneu.marca || '-')} ${pneu.modelo ? '· ' + escapeHtml(pneu.modelo) : (pneu.medida ? '· ' + escapeHtml(pneu.medida) : '')}</p>
             ${(pneu.cadastroProvisorio || pneu.origem === 'provisorio') ? `
                 <div class="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold rounded-xl p-3 mb-4 flex items-center gap-2">
                     <i class="fas fa-triangle-exclamation"></i>
@@ -1509,8 +1637,8 @@ function showAddPneuHistoricoModal() {
                         <input type="text" id="ph-marca" placeholder="Ex: Michelin" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">MEDIDA</label>
-                        <input type="text" id="ph-medida" placeholder="Ex: 295/80 R22.5" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">MODELO</label>
+                        <input type="text" id="ph-modelo" placeholder="Ex: X Multiway 3D" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
                     </div>
                 </div>
                 <div>
@@ -1594,7 +1722,7 @@ function salvarPneuHistorico(e) {
     e.preventDefault();
     const fuego = document.getElementById('ph-fuego').value.trim();
     const marca = document.getElementById('ph-marca').value.trim();
-    const medida = document.getElementById('ph-medida').value.trim();
+    const modelo = document.getElementById('ph-modelo').value.trim();
     const tipoBanda = document.getElementById('ph-tipo-banda').value;
     const kmAnterior = parseInt(document.getElementById('ph-km-anterior').value) || 0;
     const qtdReformas = parseInt(document.getElementById('ph-qtd-reformas').value) || 0;
@@ -1636,7 +1764,8 @@ function salvarPneuHistorico(e) {
     updates[`pneus/${newRef.key}`] = {
         fuego: fuego,
         marca: marca,
-        medida: medida,
+        medida: null,
+        modelo: modelo,
         sulcoAtual: null,
         sulcoInicial: null,
         tipoBanda: tipoBanda,
@@ -1694,8 +1823,8 @@ function showAddPneuModal() {
                         <input type="text" id="pneu-marca" placeholder="Ex: Michelin" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">MEDIDA</label>
-                        <input type="text" id="pneu-medida" placeholder="Ex: 295/80 R22.5" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">MODELO</label>
+                        <input type="text" id="pneu-modelo" placeholder="Ex: X Multiway 3D" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
                     </div>
                 </div>
                 <div>
@@ -1753,7 +1882,7 @@ function salvarPneusEmLote(e) {
     e.preventDefault();
     const fuegosRaw = document.getElementById('pneu-fuegos').value;
     const marca = document.getElementById('pneu-marca').value;
-    const medida = document.getElementById('pneu-medida').value;
+    const modelo = document.getElementById('pneu-modelo').value.trim();
     const tipoBanda = document.getElementById('pneu-tipo-banda').value;
     const valorPagoRaw = document.getElementById('pneu-valor').value;
     const valorPago = valorPagoRaw === '' ? null : parseFloat(valorPagoRaw);
@@ -1779,7 +1908,8 @@ function salvarPneusEmLote(e) {
         updates[`pneus/${newRef.key}`] = {
             fuego: fuego,
             marca: marca,
-            medida: medida,
+            medida: null,
+            modelo: modelo,
             sulcoAtual: null,
             sulcoInicial: null,
             tipoBanda: tipoBanda,
