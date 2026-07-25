@@ -97,6 +97,8 @@
                         <option value="Eixo 4">Eixo 4</option>
                         <option value="Eixo 5">Eixo 5</option>
                         <option value="Eixo 6">Eixo 6</option>
+                        <option value="Estepe 1">Estepe 1</option>
+                        <option value="Estepe 2">Estepe 2</option>
                     </select>
                 </div>
                 <div>
@@ -206,7 +208,11 @@
         }
 
         function gerarPosicaoCodigo(eixo, lado, montagem, veiculoTipo) {
-            const m = String(eixo).match(/(\d+)/);
+            const eixoStr = String(eixo);
+            if (/estepe\s*1/i.test(eixoStr)) return 'EST1';
+            if (/estepe\s*2/i.test(eixoStr)) return 'EST2';
+
+            const m = eixoStr.match(/(\d+)/);
             const numEixo = m ? parseInt(m[1], 10) : 1;
             const isEsquerdo = String(lado).toLowerCase().includes('esquer');
             const isInterno = String(montagem).toLowerCase().includes('interno');
