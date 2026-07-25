@@ -238,71 +238,107 @@ function renderApp() {
 // NOVA VISÃO: APROVAÇÕES DO PÁTIO
 // ====================================================
 function renderSolicitacoesView(container) {
-    const pendentes = state.solicitacoes.filter(s => s.status === 'pendente').sort((a, b) => b.timestamp - a.timestamp);
-    const historico = state.solicitacoes.filter(s => s.status !== 'pendente').sort((a, b) => b.timestamp - a.timestamp).slice(0, 10);
+    const pendentes = state.solicitacoes.filter(s => s.status === 'pendente').sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    const historico = state.solicitacoes.filter(s => s.status !== 'pendente').sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 10);
+
+    // Normaliza: ordens novas (com itens[]) ou formato antigo plano (1 pneu por solicitação)
+    function getItens(s) {
+        if (Array.isArray(s.itens) && s.itens.length > 0) return s.itens;
+        return [{
+            veiculoTipo: 'Cavalo',
+            posicao: s.posicao,
+            posicaoCodigo: s.posicao,
+            tipoAcao: s.tipoAcao,
+            fogoSaindo: s.pneuSaindoFogo,
+            sulcoSaindo: s.sulcoSaindo,
+            fogoEntrando: s.pneuEntrandoFogo,
+            observacao: s.observacao
+        }];
+    }
+
+    function labelAcao(tipo) {
+        const map = { troca: 'Troca', medicao: 'Medição', reforma: 'Reforma', descarte: 'Descarte' };
+        return map[tipo] || (tipo || '-');
+    }
 
     container.innerHTML = `
         <div class="space-y-6">
-            <!-- Solicitações Pendentes -->
             <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                 <div class="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                     <h3 class="font-bold text-slate-800 text-sm">REQUISIÇÕES DO PÁTIO PENDENTES (${pendentes.length})</h3>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-xs">
-                        <thead class="bg-slate-100 text-slate-500 font-bold uppercase border-b border-slate-200">
-                            <tr>
-                                <th class="p-3.5">Data</th>
-                                <th class="p-3.5">Operador</th>
-                                <th class="p-3.5">Veículo / Pos</th>
-                                <th class="p-3.5">Serviço</th>
-                                <th class="p-3.5">Saindo / Entrando</th>
-                                <th class="p-3.5">Obs</th>
-                                <th class="p-3.5 text-right">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            ${pendentes.length === 0 ? `<tr><td colspan="7" class="p-8 text-center text-slate-400">Nenhuma requisição aguardando aprovação.</td></tr>` : 
-                            pendentes.map(s => `
-                                <tr>
-                                    <td class="p-3.5 text-slate-600">${new Date(s.data).toLocaleString('pt-BR')}</td>
-                                    <td class="p-3.5 font-bold text-slate-800">${escapeHtml(s.solicitante)}</td>
-                                    <td class="p-3.5 text-slate-600"><span class="font-bold text-blue-600">${escapeHtml(s.placa)}</span> (${escapeHtml(s.posicao)})<br><span class="text-[10px] text-slate-400">KM: ${s.kmVeiculo}</span></td>
-                                    <td class="p-3.5 uppercase font-bold text-[10px] text-slate-500">${s.tipoAcao}</td>
-                                    <td class="p-3.5">
-                                        ${s.pneuSaindoFogo ? `<div class="text-rose-600 font-bold text-[10px]"><i class="fas fa-arrow-down"></i> Sai: ${s.pneuSaindoFogo} ${s.sulcoSaindo ? '('+s.sulcoSaindo+'mm)' : ''}</div>` : ''}
-                                        ${s.pneuEntrandoFogo ? `<div class="text-emerald-600 font-bold text-[10px] mt-1"><i class="fas fa-arrow-up"></i> Entra: ${s.pneuEntrandoFogo}</div>` : ''}
-                                    </td>
-                                    <td class="p-3.5 text-slate-500 text-[10px] max-w-xs truncate" title="${escapeHtml(s.observacao)}">${escapeHtml(s.observacao) || '-'}</td>
-                                    <td class="p-3.5 text-right space-x-1">
-                                        <button onclick="aprovarSolicitacao('${s.id}')" title="Aprovar e processar estoque" class="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded hover:bg-emerald-200 font-bold"><i class="fas fa-check"></i> Aprovar</button>
-                                        <button onclick="rejeitarSolicitacao('${s.id}')" title="Rejeitar pedido" class="bg-red-100 text-red-700 px-3 py-1.5 rounded hover:bg-red-200 font-bold"><i class="fas fa-xmark"></i></button>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+                <div class="divide-y divide-slate-100">
+                    ${pendentes.length === 0 ? `
+                        <div class="p-8 text-center text-slate-400 text-xs">Nenhuma requisição aguardando aprovação.</div>
+                    ` : pendentes.map(s => {
+                        const itens = getItens(s);
+                        const placaPrincipal = s.placaCavalo || s.placa || '-';
+                        const placaCarreta = s.placaCarreta || null;
+                        return `
+                        <div class="p-4 hover:bg-slate-50/50">
+                            <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+                                <div>
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <span class="font-black text-blue-600 text-sm">${escapeHtml(placaPrincipal)}</span>
+                                        ${placaCarreta ? `<span class="text-slate-400 text-[10px]">+ Carreta ${escapeHtml(placaCarreta)}</span>` : ''}
+                                        <span class="text-[10px] text-slate-400">KM ${s.kmVeiculo ?? '-'}</span>
+                                        <span class="text-[10px] text-slate-400">${s.data ? new Date(s.data).toLocaleString('pt-BR') : ''}</span>
+                                    </div>
+                                    <div class="text-[11px] text-slate-500 mt-0.5">
+                                        ${s.solicitante ? `<i class="fas fa-user text-[9px]"></i> ${escapeHtml(s.solicitante)} · ` : ''}
+                                        ${itens.length} item(ns)
+                                    </div>
+                                </div>
+                                <div class="flex gap-1.5 shrink-0">
+                                    <button onclick="aprovarSolicitacao('${s.id}')" title="Aprovar e processar estoque"
+                                            class="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg hover:bg-emerald-200 font-bold text-xs">
+                                        <i class="fas fa-check"></i> Aprovar
+                                    </button>
+                                    <button onclick="rejeitarSolicitacao('${s.id}')" title="Rejeitar pedido"
+                                            class="bg-red-100 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-200 font-bold text-xs">
+                                        <i class="fas fa-xmark"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="space-y-1.5">
+                                ${itens.map(item => {
+                                    const posLabel = item.posicaoCodigo || item.posicao || '-';
+                                    return `
+                                    <div class="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[11px] flex flex-wrap items-center gap-x-4 gap-y-1">
+                                        <span class="font-bold text-slate-700 uppercase tracking-wide">${labelAcao(item.tipoAcao)}</span>
+                                        <span class="text-slate-500">${escapeHtml(item.veiculoTipo || '')} · <span class="font-mono text-blue-600">${escapeHtml(posLabel)}</span></span>
+                                        ${item.fogoSaindo ? `<span class="text-rose-600 font-bold"><i class="fas fa-arrow-down text-[9px]"></i> Sai #${escapeHtml(item.fogoSaindo)}${item.sulcoSaindo != null ? ` (${item.sulcoSaindo}mm)` : ''}</span>` : ''}
+                                        ${item.fogoEntrando ? `<span class="text-emerald-600 font-bold"><i class="fas fa-arrow-up text-[9px]"></i> Entra #${escapeHtml(item.fogoEntrando)}</span>` : ''}
+                                        ${item.observacao ? `<span class="text-slate-400 truncate max-w-[180px]" title="${escapeHtml(item.observacao)}">${escapeHtml(item.observacao)}</span>` : ''}
+                                    </div>`;
+                                }).join('')}
+                            </div>
+                        </div>`;
+                    }).join('')}
                 </div>
             </div>
 
-            <!-- Últimas processadas -->
             ${historico.length > 0 ? `
-            <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden opacity-75">
+            <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden opacity-80">
                 <div class="p-4 border-b border-slate-100 bg-slate-50">
                     <h3 class="font-bold text-slate-800 text-sm">Últimas 10 processadas</h3>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-xs">
                         <tbody class="divide-y divide-slate-100">
-                            ${historico.map(s => `
+                            ${historico.map(s => {
+                                const placa = s.placaCavalo || s.placa || '-';
+                                const qtd = Array.isArray(s.itens) ? s.itens.length : 1;
+                                return `
                                 <tr>
-                                    <td class="p-3 text-slate-500">${new Date(s.data).toLocaleDateString('pt-BR')}</td>
-                                    <td class="p-3 text-slate-600">${escapeHtml(s.placa)}</td>
+                                    <td class="p-3 text-slate-500">${s.data ? new Date(s.data).toLocaleDateString('pt-BR') : '-'}</td>
+                                    <td class="p-3 text-slate-700 font-bold">${escapeHtml(placa)}</td>
+                                    <td class="p-3 text-slate-500">${qtd} item(ns)</td>
                                     <td class="p-3">
-                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${s.status === 'aprovada' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">${s.status.toUpperCase()}</span>
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${s.status === 'aprovada' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">${(s.status || '').toUpperCase()}</span>
                                     </td>
-                                </tr>
-                            `).join('')}
+                                </tr>`;
+                            }).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -318,48 +354,139 @@ function rejeitarSolicitacao(id) {
     }
 }
 
+/**
+ * Processa um único item de uma ordem do pátio (troca / medição / reforma / descarte).
+ */
+function processarItemPatio(item, s, updates) {
+    const placa = resolverPlacaSolicitacao(s, item);
+    const veiculo = placa ? state.veiculos.find(v => v.placa === placa) : null;
+    const tipoVeiculo = (veiculo && veiculo.tipo) || (item.veiculoTipo === 'Carreta' ? 'carreta' : 'cavalo');
+    const posicaoCodigo = mapearPosicaoPatio(item, tipoVeiculo);
+    const kmVeiculo = Number(s.kmVeiculo) || 0;
+    const usuario = s.solicitante || 'pátio';
+    const acao = item.tipoAcao || 'troca';
+
+    // --- Pneu saindo (troca, medicao, reforma, descarte) ---
+    if (item.fogoSaindo) {
+        const pneuSaindo = state.pneus.find(p => String(p.fuego) === String(item.fogoSaindo));
+        if (pneuSaindo) {
+            if (acao === 'medicao') {
+                if (item.sulcoSaindo != null) {
+                    updates[`pneus/${pneuSaindo.id}/sulcoAtual`] = item.sulcoSaindo;
+                }
+                const histRef = window.rtdb.ref('historico').push();
+                updates[`historico/${histRef.key}`] = {
+                    pneuId: pneuSaindo.id,
+                    fuego: pneuSaindo.fuego,
+                    tipo: 'Medição de Sulco (Pátio)',
+                    data: Date.now(),
+                    veiculoId: veiculo ? veiculo.id : pneuSaindo.veiculoId || null,
+                    placa: placa,
+                    posicao: posicaoCodigo,
+                    kmVeiculo: kmVeiculo,
+                    sulco: item.sulcoSaindo != null ? item.sulcoSaindo : null,
+                    usuario: usuario
+                };
+            } else {
+                const cicloKm = pneuSaindo.kmInstalacaoAtual != null
+                    ? Math.max(0, kmVeiculo - pneuSaindo.kmInstalacaoAtual)
+                    : 0;
+
+                let novoStatus = 'Estoque';
+                if (acao === 'descarte') {
+                    novoStatus = 'Descartado';
+                } else if (acao === 'reforma' || (item.sulcoSaindo != null && item.sulcoSaindo <= 4)) {
+                    novoStatus = 'Reforma';
+                }
+
+                updates[`pneus/${pneuSaindo.id}/status`] = novoStatus;
+                updates[`pneus/${pneuSaindo.id}/veiculoId`] = null;
+                updates[`pneus/${pneuSaindo.id}/posicao`] = null;
+                updates[`pneus/${pneuSaindo.id}/kmInstalacaoAtual`] = null;
+                updates[`pneus/${pneuSaindo.id}/kmRodadoTotal`] = (pneuSaindo.kmRodadoTotal || 0) + cicloKm;
+                if (item.sulcoSaindo != null) {
+                    updates[`pneus/${pneuSaindo.id}/sulcoAtual`] = item.sulcoSaindo;
+                }
+
+                const tipoHist = acao === 'descarte' ? 'Descarte (Pátio)'
+                    : acao === 'reforma' ? 'Envio para Reforma (Pátio)'
+                    : 'Desmontagem (Pátio)';
+
+                const histRef = window.rtdb.ref('historico').push();
+                updates[`historico/${histRef.key}`] = {
+                    pneuId: pneuSaindo.id,
+                    fuego: pneuSaindo.fuego,
+                    tipo: tipoHist,
+                    data: Date.now(),
+                    veiculoId: veiculo ? veiculo.id : null,
+                    placa: placa,
+                    posicao: posicaoCodigo,
+                    kmVeiculo: kmVeiculo,
+                    kmRodadoCiclo: cicloKm,
+                    sulco: item.sulcoSaindo != null ? item.sulcoSaindo : null,
+                    usuario: usuario
+                };
+            }
+        }
+    }
+
+    // --- Pneu entrando (somente troca) ---
+    if (acao === 'troca' && item.fogoEntrando) {
+        const pneuEntrando = state.pneus.find(p => String(p.fuego) === String(item.fogoEntrando));
+        if (pneuEntrando && veiculo) {
+            updates[`pneus/${pneuEntrando.id}/status`] = 'Em Uso';
+            updates[`pneus/${pneuEntrando.id}/veiculoId`] = veiculo.id;
+            updates[`pneus/${pneuEntrando.id}/posicao`] = posicaoCodigo;
+            updates[`pneus/${pneuEntrando.id}/kmInstalacaoAtual`] = kmVeiculo;
+
+            const histRef = window.rtdb.ref('historico').push();
+            updates[`historico/${histRef.key}`] = {
+                pneuId: pneuEntrando.id,
+                fuego: pneuEntrando.fuego,
+                tipo: 'Montagem (Pátio)',
+                data: Date.now(),
+                veiculoId: veiculo.id,
+                placa: veiculo.placa,
+                posicao: posicaoCodigo,
+                kmVeiculo: kmVeiculo,
+                sulco: pneuEntrando.sulcoAtual != null ? pneuEntrando.sulcoAtual : null,
+                usuario: usuario
+            };
+        }
+    }
+
+    if (veiculo && kmVeiculo > 0) {
+        updates[`veiculos/${veiculo.id}/kmAtual`] = Math.max(kmVeiculo, veiculo.kmAtual || 0);
+    }
+
+    return true;
+}
+
 function aprovarSolicitacao(id) {
     const s = state.solicitacoes.find(x => x.id === id);
-    if(!s) return;
+    if (!s) return;
 
     if (!confirm('Aprovar solicitação? Isso atualizará o estoque e a posição dos pneus automaticamente (se encontrados no sistema).')) return;
 
-    const veiculo = state.veiculos.find(v => v.placa === s.placa);
+    let itens = Array.isArray(s.itens) && s.itens.length > 0
+        ? s.itens
+        : [{
+            veiculoTipo: 'Cavalo',
+            posicao: s.posicao,
+            posicaoCodigo: s.posicao,
+            tipoAcao: s.tipoAcao || 'troca',
+            fogoSaindo: s.pneuSaindoFogo,
+            sulcoSaindo: s.sulcoSaindo,
+            fogoEntrando: s.pneuEntrandoFogo,
+            observacao: s.observacao
+        }];
+
     const updates = {};
     updates[`solicitacoes/${id}/status`] = 'aprovada';
-    
-    // Processamento Automático do Pátio
-    if (s.tipoAcao === 'troca' && veiculo) {
-        const pneuSaindo = state.pneus.find(p => p.fuego === s.pneuSaindoFogo);
-        const pneuEntrando = state.pneus.find(p => p.fuego === s.pneuEntrandoFogo);
-        
-        if (pneuSaindo) {
-            // Desmontagem e envio para reforma/estoque
-            const cicloKm = pneuSaindo.kmInstalacaoAtual != null ? Math.max(0, s.kmVeiculo - pneuSaindo.kmInstalacaoAtual) : 0;
-            updates[`pneus/${pneuSaindo.id}/status`] = s.sulcoSaindo <= 4 ? 'Reforma' : 'Estoque';
-            updates[`pneus/${pneuSaindo.id}/veiculoId`] = null;
-            updates[`pneus/${pneuSaindo.id}/posicao`] = null;
-            if(s.sulcoSaindo) updates[`pneus/${pneuSaindo.id}/sulcoAtual`] = s.sulcoSaindo;
-            updates[`pneus/${pneuSaindo.id}/kmInstalacaoAtual`] = null;
-            updates[`pneus/${pneuSaindo.id}/kmRodadoTotal`] = (pneuSaindo.kmRodadoTotal || 0) + cicloKm;
-            
-            const histSaindo = window.rtdb.ref('historico').push();
-            updates[`historico/${histSaindo.key}`] = { pneuId: pneuSaindo.id, fuego: pneuSaindo.fuego, tipo: 'Desmontagem (Pátio)', data: Date.now(), veiculoId: veiculo.id, placa: veiculo.placa, posicao: s.posicao, kmVeiculo: s.kmVeiculo, kmRodadoCiclo: cicloKm, sulco: s.sulcoSaindo || null, usuario: s.solicitante };
-        }
-        
-        if (pneuEntrando) {
-            // Montagem do pneu novo
-            updates[`pneus/${pneuEntrando.id}/status`] = 'Em Uso';
-            updates[`pneus/${pneuEntrando.id}/veiculoId`] = veiculo.id;
-            updates[`pneus/${pneuEntrando.id}/posicao`] = s.posicao;
-            updates[`pneus/${pneuEntrando.id}/kmInstalacaoAtual`] = s.kmVeiculo;
-            
-            const histEntrando = window.rtdb.ref('historico').push();
-            updates[`historico/${histEntrando.key}`] = { pneuId: pneuEntrando.id, fuego: pneuEntrando.fuego, tipo: 'Montagem (Pátio)', data: Date.now(), veiculoId: veiculo.id, placa: veiculo.placa, posicao: s.posicao, kmVeiculo: s.kmVeiculo, sulco: pneuEntrando.sulcoAtual || null, usuario: s.solicitante };
-        }
-        
-        updates[`veiculos/${veiculo.id}/kmAtual`] = s.kmVeiculo;
-    }
+    updates[`solicitacoes/${id}/aprovadoEm`] = Date.now();
+    updates[`solicitacoes/${id}/aprovadoPor`] = getUsuarioAtual();
+
+    itens.forEach(item => processarItemPatio(item, s, updates));
 
     window.rtdb.ref().update(updates).then(() => {
         showToast('Solicitação processada e estoque integrado!', 'success');
@@ -403,6 +530,44 @@ function getPosicoesEixo(tipoVeiculo, numeroEixo) {
         { pos: `E${numeroEixo}R3`, label: `E${numeroEixo}R3`, lado: 'direita_dentro' },
         { pos: `E${numeroEixo}R4`, label: `E${numeroEixo}R4`, lado: 'direita_fora' }
     ];
+}
+
+/**
+ * Converte a posição textual do pátio (Eixo / Lado / Montagem)
+ * para o código interno usado no painel (E1R1, E2R2, etc.).
+ */
+function mapearPosicaoPatio(item, tipoVeiculo) {
+    if (item.posicaoCodigo && /^E\d+R[1-4]$/i.test(item.posicaoCodigo)) {
+        return item.posicaoCodigo.toUpperCase();
+    }
+
+    const eixoMatch = String(item.eixo || item.posicao || '').match(/(\d+)/);
+    const numEixo = eixoMatch ? parseInt(eixoMatch[1], 10) : 1;
+
+    const ladoRaw = String(item.lado || '').toLowerCase();
+    const montagemRaw = String(item.montagem || '').toLowerCase();
+
+    const isEsquerdo = ladoRaw.includes('esquer');
+    const isInterno = montagemRaw.includes('interno');
+    const isSimples = montagemRaw.includes('simples');
+
+    if ((tipoVeiculo === 'cavalo' || tipoVeiculo === 'Cavalo') && numEixo === 1) {
+        return isEsquerdo ? 'E1R1' : 'E1R4';
+    }
+
+    if (isEsquerdo) {
+        return isInterno && !isSimples ? `E${numEixo}R2` : `E${numEixo}R1`;
+    } else {
+        return isInterno && !isSimples ? `E${numEixo}R3` : `E${numEixo}R4`;
+    }
+}
+
+/** Resolve a placa correta (cavalo ou carreta) a partir da ordem do pátio */
+function resolverPlacaSolicitacao(s, item) {
+    if (item && item.veiculoTipo === 'Carreta' && s.placaCarreta) {
+        return s.placaCarreta;
+    }
+    return s.placaCavalo || s.placa || s.placaCarreta || null;
 }
 
 // ====================================================
