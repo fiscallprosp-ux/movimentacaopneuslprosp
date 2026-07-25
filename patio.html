@@ -76,10 +76,17 @@
                 </div>
             </div>
 
-            <div>
-                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Km Atual do Veículo *</label>
-                <input type="number" id="kmVeiculo" required placeholder="Ex: 185200" 
-                       class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-lprosp-blue">
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Km Atual do Veículo *</label>
+                    <input type="number" id="kmVeiculo" required placeholder="Ex: 185200" 
+                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-lprosp-blue">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Operador *</label>
+                    <input type="text" id="solicitante" required placeholder="Seu nome" 
+                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-lprosp-blue">
+                </div>
             </div>
         </div>
 
@@ -232,21 +239,40 @@
             }
         }
 
+        function gerarPosicaoCodigo(eixo, lado, montagem, veiculoTipo) {
+            const m = String(eixo).match(/(\d+)/);
+            const numEixo = m ? parseInt(m[1], 10) : 1;
+            const isEsquerdo = String(lado).toLowerCase().includes('esquer');
+            const isInterno = String(montagem).toLowerCase().includes('interno');
+            const isSimples = String(montagem).toLowerCase().includes('simples');
+
+            if (veiculoTipo === 'Cavalo' && numEixo === 1) {
+                return isEsquerdo ? 'E1R1' : 'E1R4';
+            }
+            if (isEsquerdo) {
+                return isInterno && !isSimples ? ('E' + numEixo + 'R2') : ('E' + numEixo + 'R1');
+            }
+            return isInterno && !isSimples ? ('E' + numEixo + 'R3') : ('E' + numEixo + 'R4');
+        }
+
         function adicionarPneuNaLista() {
             try {
                 const eixo = document.getElementById('itemEixo').value;
                 const lado = document.getElementById('itemLado').value;
                 const montagem = document.getElementById('itemMontagem').value;
+                const veiculoTipo = document.getElementById('itemVeiculo').value;
                 
-                const posicaoPadronizada = `${eixo} - ${lado} (${montagem})`;
+                const posicaoPadronizada = eixo + ' - ' + lado + ' (' + montagem + ')';
+                const posicaoCodigo = gerarPosicaoCodigo(eixo, lado, montagem, veiculoTipo);
 
                 const item = {
                     id: Date.now(),
-                    veiculoTipo: document.getElementById('itemVeiculo').value,
+                    veiculoTipo: veiculoTipo,
                     eixo: eixo,
                     lado: lado,
                     montagem: montagem,
                     posicao: posicaoPadronizada,
+                    posicaoCodigo: posicaoCodigo,
                     tipoAcao: document.getElementById('itemTipoAcao').value,
                     fogoSaindo: document.getElementById('itemFogoSaindo').value.trim(),
                     sulcoSaindo: document.getElementById('itemSulcoSaindo').value ? Number(document.getElementById('itemSulcoSaindo').value) : null,
@@ -256,7 +282,6 @@
 
                 pneusAdicionados.push(item);
 
-                // Limpa campos de fogo/sulco/obs
                 document.getElementById('itemFogoSaindo').value = '';
                 document.getElementById('itemSulcoSaindo').value = '';
                 document.getElementById('itemFogoEntrando').value = '';
@@ -297,7 +322,8 @@
                     <div class="space-y-1">
                         <div class="flex items-center gap-2 flex-wrap">
                             <span class="bg-lprosp-purple text-white font-bold px-1.5 py-0.5 rounded text-[10px]">${pneu.veiculoTipo}</span>
-                            <span class="font-mono font-bold text-lprosp-blue">${pneu.posicao}</span>
+                            <span class="font-mono font-bold text-lprosp-blue">${pneu.posicaoCodigo || pneu.posicao}</span>
+                            <span class="text-slate-500 text-[10px]">${pneu.posicao}</span>
                             <span class="text-slate-400 capitalize">(${pneu.tipoAcao})</span>
                         </div>
                         <div class="text-[11px] text-slate-300">
@@ -316,9 +342,14 @@
         function enviarOrdemCompleta() {
             const placaCavalo = document.getElementById('placaCavalo').value.trim().toUpperCase();
             const kmVeiculo = document.getElementById('kmVeiculo').value;
+            const solicitante = document.getElementById('solicitante').value.trim();
 
             if (!placaCavalo || !kmVeiculo) {
                 alert('Preencha a Placa do Cavalo e o KM Atual.');
+                return;
+            }
+            if (!solicitante) {
+                alert('Informe o nome do operador.');
                 return;
             }
 
@@ -337,6 +368,7 @@
                 placaCavalo: placaCavalo,
                 placaCarreta: document.getElementById('placaCarreta').value.trim().toUpperCase(),
                 kmVeiculo: Number(kmVeiculo),
+                solicitante: solicitante,
                 totalItens: pneusAdicionados.length,
                 itens: pneusAdicionados,
                 status: 'pendente'
@@ -352,6 +384,7 @@
                     document.getElementById('placaCavalo').value = '';
                     document.getElementById('placaCarreta').value = '';
                     document.getElementById('kmVeiculo').value = '';
+                    // Mantém o nome do operador para a próxima ordem
 
                     btn.disabled = false;
                     btn.innerHTML = `<i class="fas fa-paper-plane"></i> ENVIAR SOLICITAÇÃO COMPLETA`;
