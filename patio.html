@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>L-Prosp - Operação de Pátio</title>
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -23,15 +22,12 @@
             }
         }
     </script>
-    <!-- FontAwesome CDN -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Firebase App & Realtime Database -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen pb-12">
 
-    <!-- Cabeçalho -->
     <header class="bg-slate-900 border-b border-lprosp-purple/40 p-3 sticky top-0 z-50 flex justify-between items-center shadow-lg">
         <div class="flex items-center gap-3">
             <div class="bg-white p-1.5 rounded-xl border border-slate-700 flex items-center justify-center shadow-sm">
@@ -49,15 +45,13 @@
 
     <main class="max-w-md mx-auto p-4 space-y-4">
 
-        <!-- Banner Info -->
         <div class="bg-lprosp-purple/20 border border-lprosp-purple/50 rounded-2xl p-3.5 flex items-start gap-3 shadow-md">
             <i class="fas fa-circle-info text-lprosp-blue text-base mt-0.5"></i>
             <p class="text-xs text-slate-200 leading-relaxed">
-                Selecione o eixo, lado e posição corretos para garantir o mapeamento exato da frota.
+                Selecione o eixo, lado e posição corretos. Adicione todos os pneus da ordem antes de enviar.
             </p>
         </div>
 
-        <!-- 1. DADOS DA PARADA / VEÍCULO -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-xl">
             <h2 class="text-xs font-bold uppercase tracking-wider text-lprosp-blue flex items-center gap-2">
                 <i class="fas fa-truck text-sm"></i> 1. Dados do Veículo
@@ -66,37 +60,31 @@
             <div class="grid grid-cols-2 gap-2">
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Placa Cavalo *</label>
-                    <input type="text" id="placaCavalo" required placeholder="Ex: ABC1D23" 
-                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-mono uppercase text-white focus:outline-none focus:border-lprosp-blue">
+                    <input type="text" id="placaCavalo" required placeholder="Ex: ABC1D23" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-mono uppercase text-white focus:outline-none focus:border-lprosp-blue">
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Placa Carreta</label>
-                    <input type="text" id="placaCarreta" placeholder="Ex: XYZ9876" 
-                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-mono uppercase text-white focus:outline-none focus:border-lprosp-blue">
+                    <input type="text" id="placaCarreta" placeholder="Ex: XYZ9876" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-mono uppercase text-white focus:outline-none focus:border-lprosp-blue">
                 </div>
             </div>
 
             <div class="grid grid-cols-2 gap-2">
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Km Atual do Veículo *</label>
-                    <input type="number" id="kmVeiculo" required placeholder="Ex: 185200" 
-                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-lprosp-blue">
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Km Atual *</label>
+                    <input type="number" id="kmVeiculo" required placeholder="Ex: 185200" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-lprosp-blue">
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Operador *</label>
-                    <input type="text" id="solicitante" required placeholder="Seu nome" 
-                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-lprosp-blue">
+                    <input type="text" id="solicitante" required placeholder="Seu nome" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-lprosp-blue">
                 </div>
             </div>
         </div>
 
-        <!-- 2. FORMULÁRIO DE ADICIONAR PNEU -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-xl">
             <h2 class="text-xs font-bold uppercase tracking-wider text-lprosp-green flex items-center gap-2">
                 <i class="fas fa-plus-circle text-sm"></i> 2. Registrar Movimentação do Pneu
             </h2>
 
-            <!-- Pertence ao veículo -->
             <div>
                 <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Pertence ao *</label>
                 <select id="itemVeiculo" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lprosp-green">
@@ -105,7 +93,6 @@
                 </select>
             </div>
 
-            <!-- SELEÇÃO PADRONIZADA DE POSIÇÃO (Eixo, Lado, Posição) -->
             <div class="grid grid-cols-3 gap-2">
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Eixo *</label>
@@ -145,7 +132,6 @@
                 </select>
             </div>
 
-            <!-- Saindo -->
             <div id="box-pneu-saindo" class="grid grid-cols-2 gap-2">
                 <div>
                     <label class="block text-[10px] font-bold text-lprosp-red uppercase mb-1">Nº Fogo Retirado</label>
@@ -157,7 +143,6 @@
                 </div>
             </div>
 
-            <!-- Entrando -->
             <div id="box-pneu-entrando">
                 <label class="block text-[10px] font-bold text-lprosp-green uppercase mb-1">Nº Fogo Colocado / Montado</label>
                 <input type="text" id="itemFogoEntrando" placeholder="Ex: 085" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-lprosp-green">
@@ -168,13 +153,11 @@
                 <input type="text" id="itemObs" placeholder="Ex: Corte lateral" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lprosp-blue">
             </div>
 
-            <button type="button" onclick="adicionarPneuNaLista()" 
-                    class="w-full bg-lprosp-green hover:brightness-110 active:scale-[0.99] text-white font-bold py-2.5 rounded-xl text-xs tracking-wider transition flex items-center justify-center gap-2 shadow-md">
+            <button type="button" onclick="adicionarPneuNaLista()" class="w-full bg-lprosp-green hover:brightness-110 active:scale-[0.99] text-white font-bold py-2.5 rounded-xl text-xs tracking-wider transition flex items-center justify-center gap-2 shadow-md">
                 <i class="fas fa-plus"></i> ADICIONAR ESTE PNEU À LISTA
             </button>
         </div>
 
-        <!-- 3. LISTA DE PNEUS ADICIONADOS -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-xl">
             <div class="flex justify-between items-center">
                 <h2 class="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
@@ -186,18 +169,13 @@
                 Nenhum pneu adicionado ainda.
             </div>
 
-            <div id="container-lista-pneus" class="space-y-2 hidden">
-                <!-- Itens injetados via JS -->
-            </div>
+            <div id="container-lista-pneus" class="space-y-2 hidden"></div>
 
-            <!-- Botão Enviar Geral -->
-            <button type="button" id="btn-enviar-tudo" onclick="enviarOrdemCompleta()" disabled
-                    class="w-full bg-lprosp-blue disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 active:scale-[0.99] text-white font-bold py-3.5 rounded-xl text-xs tracking-wider shadow-lg transition flex items-center justify-center gap-2 mt-4">
+            <button type="button" id="btn-enviar-tudo" onclick="enviarOrdemCompleta()" disabled class="w-full bg-lprosp-blue disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 active:scale-[0.99] text-white font-bold py-3.5 rounded-xl text-xs tracking-wider shadow-lg transition flex items-center justify-center gap-2 mt-4">
                 <i class="fas fa-paper-plane"></i> ENVIAR SOLICITAÇÃO COMPLETA
             </button>
         </div>
 
-        <!-- Toast Sucesso -->
         <div id="toast-sucesso" class="hidden bg-emerald-950/90 border border-lprosp-green text-emerald-200 p-4 rounded-2xl text-center space-y-1 shadow-2xl">
             <i class="fas fa-circle-check text-2xl text-lprosp-green"></i>
             <p class="font-bold text-sm text-white">Ordem de Serviço Enviada!</p>
@@ -233,7 +211,7 @@
             if (acao === 'medicao' || acao === 'reforma' || acao === 'descarte') {
                 boxSaindo.classList.remove('hidden');
                 boxEntrando.classList.add('hidden');
-            } else { 
+            } else {
                 boxSaindo.classList.remove('hidden');
                 boxEntrando.classList.remove('hidden');
             }
@@ -250,9 +228,9 @@
                 return isEsquerdo ? 'E1R1' : 'E1R4';
             }
             if (isEsquerdo) {
-                return isInterno && !isSimples ? ('E' + numEixo + 'R2') : ('E' + numEixo + 'R1');
+                return (isInterno && !isSimples) ? ('E' + numEixo + 'R2') : ('E' + numEixo + 'R1');
             }
-            return isInterno && !isSimples ? ('E' + numEixo + 'R3') : ('E' + numEixo + 'R4');
+            return (isInterno && !isSimples) ? ('E' + numEixo + 'R3') : ('E' + numEixo + 'R4');
         }
 
         function adicionarPneuNaLista() {
@@ -261,7 +239,7 @@
                 const lado = document.getElementById('itemLado').value;
                 const montagem = document.getElementById('itemMontagem').value;
                 const veiculoTipo = document.getElementById('itemVeiculo').value;
-                
+
                 const posicaoPadronizada = eixo + ' - ' + lado + ' (' + montagem + ')';
                 const posicaoCodigo = gerarPosicaoCodigo(eixo, lado, montagem, veiculoTipo);
 
@@ -275,7 +253,9 @@
                     posicaoCodigo: posicaoCodigo,
                     tipoAcao: document.getElementById('itemTipoAcao').value,
                     fogoSaindo: document.getElementById('itemFogoSaindo').value.trim(),
-                    sulcoSaindo: document.getElementById('itemSulcoSaindo').value ? Number(document.getElementById('itemSulcoSaindo').value) : null,
+                    sulcoSaindo: document.getElementById('itemSulcoSaindo').value
+                        ? Number(document.getElementById('itemSulcoSaindo').value)
+                        : null,
                     fogoEntrando: document.getElementById('itemFogoEntrando').value.trim(),
                     observacao: document.getElementById('itemObs').value.trim()
                 };
@@ -294,7 +274,7 @@
         }
 
         function removerPneu(id) {
-            pneusAdicionados = pneusAdicionados.filter(p => p.id !== id);
+            pneusAdicionados = pneusAdicionados.filter(function (p) { return p.id !== id; });
             renderizarLista();
         }
 
@@ -317,26 +297,28 @@
             container.classList.remove('hidden');
             btnEnviar.disabled = false;
 
-            container.innerHTML = pneusAdicionados.map((pneu) => `
-                <div class="bg-slate-800 border border-slate-700/80 rounded-xl p-3 flex justify-between items-center text-xs">
-                    <div class="space-y-1">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <span class="bg-lprosp-purple text-white font-bold px-1.5 py-0.5 rounded text-[10px]">${pneu.veiculoTipo}</span>
-                            <span class="font-mono font-bold text-lprosp-blue">${pneu.posicaoCodigo || pneu.posicao}</span>
-                            <span class="text-slate-500 text-[10px]">${pneu.posicao}</span>
-                            <span class="text-slate-400 capitalize">(${pneu.tipoAcao})</span>
-                        </div>
-                        <div class="text-[11px] text-slate-300">
-                            ${pneu.fogoSaindo ? `<span class="text-lprosp-red">Sai: #${pneu.fogoSaindo} (${pneu.sulcoSaindo || '-'}mm)</span>` : ''}
-                            ${pneu.fogoSaindo && pneu.fogoEntrando ? ' | ' : ''}
-                            ${pneu.fogoEntrando ? `<span class="text-lprosp-green">Entra: #${pneu.fogoEntrando}</span>` : ''}
-                        </div>
-                    </div>
-                    <button type="button" onclick="removerPneu(${pneu.id})" class="text-lprosp-red hover:opacity-80 p-2">
-                        <i class="fas fa-trash-can"></i>
-                    </button>
-                </div>
-            `).join('');
+            container.innerHTML = pneusAdicionados.map(function (pneu) {
+                return (
+                    '<div class="bg-slate-800 border border-slate-700/80 rounded-xl p-3 flex justify-between items-center text-xs">' +
+                    '<div class="space-y-1">' +
+                    '<div class="flex items-center gap-2 flex-wrap">' +
+                    '<span class="bg-lprosp-purple text-white font-bold px-1.5 py-0.5 rounded text-[10px]">' + pneu.veiculoTipo + '</span>' +
+                    '<span class="font-mono font-bold text-lprosp-blue">' + (pneu.posicaoCodigo || pneu.posicao) + '</span>' +
+                    '<span class="text-slate-500 text-[10px]">' + pneu.posicao + '</span>' +
+                    '<span class="text-slate-400 capitalize">(' + pneu.tipoAcao + ')</span>' +
+                    '</div>' +
+                    '<div class="text-[11px] text-slate-300">' +
+                    (pneu.fogoSaindo ? '<span class="text-lprosp-red">Sai: #' + pneu.fogoSaindo + ' (' + (pneu.sulcoSaindo || '-') + 'mm)</span>' : '') +
+                    (pneu.fogoSaindo && pneu.fogoEntrando ? ' | ' : '') +
+                    (pneu.fogoEntrando ? '<span class="text-lprosp-green">Entra: #' + pneu.fogoEntrando + '</span>' : '') +
+                    '</div>' +
+                    '</div>' +
+                    '<button type="button" onclick="removerPneu(' + pneu.id + ')" class="text-lprosp-red hover:opacity-80 p-2">' +
+                    '<i class="fas fa-trash-can"></i>' +
+                    '</button>' +
+                    '</div>'
+                );
+            }).join('');
         }
 
         function enviarOrdemCompleta() {
@@ -352,7 +334,6 @@
                 alert('Informe o nome do operador.');
                 return;
             }
-
             if (pneusAdicionados.length === 0) {
                 alert('Adicione ao menos um pneu na lista.');
                 return;
@@ -360,7 +341,7 @@
 
             const btn = document.getElementById('btn-enviar-tudo');
             btn.disabled = true;
-            btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ENVIANDO ORDEM...`;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ENVIANDO ORDEM...';
 
             const ordemServico = {
                 data: new Date().toISOString(),
@@ -375,8 +356,8 @@
             };
 
             database.ref('solicitacoes').push(ordemServico)
-                .then(() => {
-                    const toast = document.getElementById('toast-sucesso');
+                .then(function () {
+                    var toast = document.getElementById('toast-sucesso');
                     toast.classList.remove('hidden');
 
                     pneusAdicionados = [];
@@ -384,19 +365,18 @@
                     document.getElementById('placaCavalo').value = '';
                     document.getElementById('placaCarreta').value = '';
                     document.getElementById('kmVeiculo').value = '';
-                    // Mantém o nome do operador para a próxima ordem
 
                     btn.disabled = false;
-                    btn.innerHTML = `<i class="fas fa-paper-plane"></i> ENVIAR SOLICITAÇÃO COMPLETA`;
+                    btn.innerHTML = '<i class="fas fa-paper-plane"></i> ENVIAR SOLICITAÇÃO COMPLETA';
 
-                    setTimeout(() => {
+                    setTimeout(function () {
                         toast.classList.add('hidden');
                     }, 4000);
                 })
-                .catch((error) => {
+                .catch(function (error) {
                     alert('Erro ao enviar: ' + error.message);
                     btn.disabled = false;
-                    btn.innerHTML = `<i class="fas fa-paper-plane"></i> ENVIAR SOLICITAÇÃO COMPLETA`;
+                    btn.innerHTML = '<i class="fas fa-paper-plane"></i> ENVIAR SOLICITAÇÃO COMPLETA';
                 });
         }
     </script>
