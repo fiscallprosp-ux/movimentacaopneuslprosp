@@ -357,6 +357,40 @@ function rejeitarSolicitacao(id) {
 /**
  * Processa um único item de uma ordem do pátio (troca / medição / reforma / descarte).
  */
+/**
+ * Cria um pneu provisório no Firebase (ainda não cadastrado formalmente).
+ * Retorna o id gerado e o objeto local para uso imediato no processamento.
+ */
+function criarPneuProvisorio(fogo, status, extra) {
+    const newRef = window.rtdb.ref('pneus').push();
+    const dados = {
+        fuego: String(fogo).trim(),
+        marca: null,
+        medida: null,
+        sulcoAtual: extra.sulco != null ? extra.sulco : null,
+        sulcoInicial: null,
+        status: status,
+        veiculoId: extra.veiculoId || null,
+        posicao: extra.posicao || null,
+        valorPago: null,
+        dataCompra: null,
+        kmInstalacaoAtual: extra.kmInstalacaoAtual != null ? extra.kmInstalacaoAtual : null,
+        kmRodadoTotal: 0,
+        custoReformasTotal: 0,
+        qtdReformas: 0,
+        origem: 'provisorio',
+        cadastroProvisorio: true,
+        provisorioEm: Date.now(),
+        provisorioOrigem: 'pátio'
+    };
+    return { key: newRef.key, dados: dados };
+}
+
+/**
+ * Processa um único item de uma ordem do pátio (troca / medição / reforma / descarte).
+ * Cria pneu provisório se o nº de fogo ainda não existir no sistema.
+ * Acumula fogos criados em updates.__provisoriosCriados (array auxiliar, removido antes do update).
+ */
 function processarItemPatio(item, s, updates) {
     const placa = resolverPlacaSolicitacao(s, item);
     const veiculo = placa ? state.veiculos.find(v => v.placa === placa) : null;
@@ -366,74 +400,149 @@ function processarItemPatio(item, s, updates) {
     const usuario = s.solicitante || 'pátio';
     const acao = item.tipoAcao || 'troca';
 
-    // --- Pneu saindo (troca, medicao, reforma, descarte) ---
+    if (!updates.__provisoriosCriados) updates.__provisoriosCriados = [];
+
+    // Helper: busca pneu no state OU já criado nesta mesma aprovação
+    function acharPneu(fogo) {
+        if (!fogo) return null;
+        const f = String(fogo).trim();
+        let p = state.pneus.find(x => String(x.fuego) === f);
+        if (p) return p;
+        // Já criado nesta rodada de updates?
+        const criado = updates.__provisoriosCriados.find(x => String(x.fuego) === f);
+        if (criado) return { id: criado.id, ...criado.dados };
+        return null;
+    }
+
+    // --- Pneu saindo ---
     if (item.fogoSaindo) {
-        const pneuSaindo = state.pneus.find(p => String(p.fuego) === String(item.fogoSaindo));
-        if (pneuSaindo) {
-            if (acao === 'medicao') {
-                if (item.sulcoSaindo != null) {
-                    updates[`pneus/${pneuSaindo.id}/sulcoAtual`] = item.sulcoSaindo;
-                }
-                const histRef = window.rtdb.ref('historico').push();
-                updates[`historico/${histRef.key}`] = {
-                    pneuId: pneuSaindo.id,
-                    fuego: pneuSaindo.fuego,
-                    tipo: 'Medição de Sulco (Pátio)',
-                    data: Date.now(),
-                    veiculoId: veiculo ? veiculo.id : pneuSaindo.veiculoId || null,
-                    placa: placa,
-                    posicao: posicaoCodigo,
-                    kmVeiculo: kmVeiculo,
-                    sulco: item.sulcoSaindo != null ? item.sulcoSaindo : null,
-                    usuario: usuario
-                };
-            } else {
-                const cicloKm = pneuSaindo.kmInstalacaoAtual != null
-                    ? Math.max(0, kmVeiculo - pneuSaindo.kmInstalacaoAtual)
-                    : 0;
+        let pneuSaindo = acharPneu(item.fogoSaindo);
 
-                let novoStatus = 'Estoque';
-                if (acao === 'descarte') {
-                    novoStatus = 'Descartado';
-                } else if (acao === 'reforma' || (item.sulcoSaindo != null && item.sulcoSaindo <= 4)) {
-                    novoStatus = 'Reforma';
-                }
+        if (!pneuSaindo) {
+            // Status inicial conforme a ação
+            let statusIni = 'Estoque';
+            if (acao === 'descarte') statusIni = 'Descartado';
+            else if (acao === 'reforma') statusIni = 'Reforma';
+            else if (acao === 'medicao') statusIni = 'Em Uso';
 
-                updates[`pneus/${pneuSaindo.id}/status`] = novoStatus;
-                updates[`pneus/${pneuSaindo.id}/veiculoId`] = null;
-                updates[`pneus/${pneuSaindo.id}/posicao`] = null;
-                updates[`pneus/${pneuSaindo.id}/kmInstalacaoAtual`] = null;
-                updates[`pneus/${pneuSaindo.id}/kmRodadoTotal`] = (pneuSaindo.kmRodadoTotal || 0) + cicloKm;
-                if (item.sulcoSaindo != null) {
-                    updates[`pneus/${pneuSaindo.id}/sulcoAtual`] = item.sulcoSaindo;
-                }
+            const prov = criarPneuProvisorio(item.fogoSaindo, statusIni, {
+                sulco: item.sulcoSaindo,
+                veiculoId: (acao === 'medicao' && veiculo) ? veiculo.id : null,
+                posicao: (acao === 'medicao') ? posicaoCodigo : null,
+                kmInstalacaoAtual: (acao === 'medicao') ? kmVeiculo : null
+            });
+            updates[`pneus/${prov.key}`] = prov.dados;
+            updates.__provisoriosCriados.push({ id: prov.key, fuego: item.fogoSaindo, dados: prov.dados });
+            pneuSaindo = { id: prov.key, ...prov.dados };
 
-                const tipoHist = acao === 'descarte' ? 'Descarte (Pátio)'
-                    : acao === 'reforma' ? 'Envio para Reforma (Pátio)'
-                    : 'Desmontagem (Pátio)';
+            const histCad = window.rtdb.ref('historico').push();
+            updates[`historico/${histCad.key}`] = {
+                pneuId: prov.key,
+                fuego: String(item.fogoSaindo).trim(),
+                tipo: 'Cadastro Provisório (Pátio)',
+                data: Date.now(),
+                veiculoId: veiculo ? veiculo.id : null,
+                placa: placa,
+                posicao: posicaoCodigo,
+                kmVeiculo: kmVeiculo,
+                usuario: usuario,
+                observacao: 'Criado automaticamente — complete marca, medida e valor quando possível.'
+            };
+        }
 
-                const histRef = window.rtdb.ref('historico').push();
-                updates[`historico/${histRef.key}`] = {
-                    pneuId: pneuSaindo.id,
-                    fuego: pneuSaindo.fuego,
-                    tipo: tipoHist,
-                    data: Date.now(),
-                    veiculoId: veiculo ? veiculo.id : null,
-                    placa: placa,
-                    posicao: posicaoCodigo,
-                    kmVeiculo: kmVeiculo,
-                    kmRodadoCiclo: cicloKm,
-                    sulco: item.sulcoSaindo != null ? item.sulcoSaindo : null,
-                    usuario: usuario
-                };
+        if (acao === 'medicao') {
+            if (item.sulcoSaindo != null) {
+                updates[`pneus/${pneuSaindo.id}/sulcoAtual`] = item.sulcoSaindo;
             }
+            // Se era provisório acabado de criar já com Em Uso, ok; se existia, garante vínculo
+            if (veiculo && !pneuSaindo.veiculoId) {
+                updates[`pneus/${pneuSaindo.id}/status`] = 'Em Uso';
+                updates[`pneus/${pneuSaindo.id}/veiculoId`] = veiculo.id;
+                updates[`pneus/${pneuSaindo.id}/posicao`] = posicaoCodigo;
+                updates[`pneus/${pneuSaindo.id}/kmInstalacaoAtual`] = kmVeiculo;
+            }
+            const histRef = window.rtdb.ref('historico').push();
+            updates[`historico/${histRef.key}`] = {
+                pneuId: pneuSaindo.id,
+                fuego: pneuSaindo.fuego,
+                tipo: 'Medição de Sulco (Pátio)',
+                data: Date.now(),
+                veiculoId: veiculo ? veiculo.id : pneuSaindo.veiculoId || null,
+                placa: placa,
+                posicao: posicaoCodigo,
+                kmVeiculo: kmVeiculo,
+                sulco: item.sulcoSaindo != null ? item.sulcoSaindo : null,
+                usuario: usuario
+            };
+        } else {
+            const cicloKm = pneuSaindo.kmInstalacaoAtual != null
+                ? Math.max(0, kmVeiculo - pneuSaindo.kmInstalacaoAtual)
+                : 0;
+
+            let novoStatus = 'Estoque';
+            if (acao === 'descarte') novoStatus = 'Descartado';
+            else if (acao === 'reforma') novoStatus = 'Reforma';
+
+            updates[`pneus/${pneuSaindo.id}/status`] = novoStatus;
+            updates[`pneus/${pneuSaindo.id}/veiculoId`] = null;
+            updates[`pneus/${pneuSaindo.id}/posicao`] = null;
+            updates[`pneus/${pneuSaindo.id}/kmInstalacaoAtual`] = null;
+            updates[`pneus/${pneuSaindo.id}/kmRodadoTotal`] = (pneuSaindo.kmRodadoTotal || 0) + cicloKm;
+            if (item.sulcoSaindo != null) {
+                updates[`pneus/${pneuSaindo.id}/sulcoAtual`] = item.sulcoSaindo;
+            }
+
+            const tipoHist = acao === 'descarte' ? 'Descarte (Pátio)'
+                : acao === 'reforma' ? 'Envio para Reforma (Pátio)'
+                : 'Desmontagem (Pátio)';
+
+            const histRef = window.rtdb.ref('historico').push();
+            updates[`historico/${histRef.key}`] = {
+                pneuId: pneuSaindo.id,
+                fuego: pneuSaindo.fuego,
+                tipo: tipoHist,
+                data: Date.now(),
+                veiculoId: veiculo ? veiculo.id : null,
+                placa: placa,
+                posicao: posicaoCodigo,
+                kmVeiculo: kmVeiculo,
+                kmRodadoCiclo: cicloKm,
+                sulco: item.sulcoSaindo != null ? item.sulcoSaindo : null,
+                usuario: usuario
+            };
         }
     }
 
     // --- Pneu entrando (somente troca) ---
     if (acao === 'troca' && item.fogoEntrando) {
-        const pneuEntrando = state.pneus.find(p => String(p.fuego) === String(item.fogoEntrando));
-        if (pneuEntrando && veiculo) {
+        let pneuEntrando = acharPneu(item.fogoEntrando);
+
+        if (!pneuEntrando) {
+            const prov = criarPneuProvisorio(item.fogoEntrando, veiculo ? 'Em Uso' : 'Estoque', {
+                veiculoId: veiculo ? veiculo.id : null,
+                posicao: veiculo ? posicaoCodigo : null,
+                kmInstalacaoAtual: veiculo ? kmVeiculo : null
+            });
+            updates[`pneus/${prov.key}`] = prov.dados;
+            updates.__provisoriosCriados.push({ id: prov.key, fuego: item.fogoEntrando, dados: prov.dados });
+            pneuEntrando = { id: prov.key, ...prov.dados };
+
+            const histCad = window.rtdb.ref('historico').push();
+            updates[`historico/${histCad.key}`] = {
+                pneuId: prov.key,
+                fuego: String(item.fogoEntrando).trim(),
+                tipo: 'Cadastro Provisório (Pátio)',
+                data: Date.now(),
+                veiculoId: veiculo ? veiculo.id : null,
+                placa: placa,
+                posicao: posicaoCodigo,
+                kmVeiculo: kmVeiculo,
+                usuario: usuario,
+                observacao: 'Criado automaticamente — complete marca, medida e valor quando possível.'
+            };
+        }
+
+        if (veiculo) {
             updates[`pneus/${pneuEntrando.id}/status`] = 'Em Uso';
             updates[`pneus/${pneuEntrando.id}/veiculoId`] = veiculo.id;
             updates[`pneus/${pneuEntrando.id}/posicao`] = posicaoCodigo;
@@ -466,7 +575,7 @@ function aprovarSolicitacao(id) {
     const s = state.solicitacoes.find(x => x.id === id);
     if (!s) return;
 
-    if (!confirm('Aprovar solicitação? Isso atualizará o estoque e a posição dos pneus automaticamente (se encontrados no sistema).')) return;
+    if (!confirm('Aprovar solicitação? Pneus ainda não cadastrados serão criados como provisórios para você completar depois.')) return;
 
     let itens = Array.isArray(s.itens) && s.itens.length > 0
         ? s.itens
@@ -488,8 +597,16 @@ function aprovarSolicitacao(id) {
 
     itens.forEach(item => processarItemPatio(item, s, updates));
 
+    const provisorios = updates.__provisoriosCriados || [];
+    delete updates.__provisoriosCriados;
+
     window.rtdb.ref().update(updates).then(() => {
-        showToast('Solicitação processada e estoque integrado!', 'success');
+        if (provisorios.length > 0) {
+            const lista = provisorios.map(p => '#' + p.fuego).join(', ');
+            showToast('Aprovado! Pneu(s) provisório(s) criado(s): ' + lista + ' — complete marca/medida depois.', 'success');
+        } else {
+            showToast('Solicitação processada e estoque integrado!', 'success');
+        }
     }).catch(e => showToast('Erro de processamento: ' + e.message, 'error'));
 }
 
@@ -707,6 +824,7 @@ function renderVeiculosView(container) {
                                 ${noLimite ? `<i class="fas fa-triangle-exclamation text-red-500 text-[10px] absolute top-1.5 right-1.5" title="Atingiu o limite recomendado de ${LIMITE_REFORMAS_RECOMENDADO} reformas"></i>` : ''}
                                 <i class="fas fa-circle-notch text-2xl text-blue-600 mb-1"></i>
                                 <span class="font-black text-xs text-slate-800 font-mono">${escapeHtml(pneu.fuego)}</span>
+                                ${(pneu.cadastroProvisorio || pneu.origem === 'provisorio') ? '<span class="text-[9px] font-bold text-amber-600">PROVISÓRIO</span>' : ''}
                                 <span class="text-[10px] text-slate-500">${pneu.sulcoAtual ?? '-'} mm</span>
                             </div>
                         `;}).join('')}
@@ -1097,7 +1215,10 @@ function renderPneusView(container) {
                             const noLimite = qtdReformas >= LIMITE_REFORMAS_RECOMENDADO;
                             return `
                                 <tr>
-                                    <td class="p-3.5 font-black text-slate-800 font-mono">${escapeHtml(pneu.fuego)}</td>
+                                    <td class="p-3.5 font-black text-slate-800 font-mono">
+                                        ${escapeHtml(pneu.fuego)}
+                                        ${(pneu.cadastroProvisorio || pneu.origem === 'provisorio') ? '<span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700" title="Cadastro provisório — complete marca, medida e valor">PROVISÓRIO</span>' : ''}
+                                    </td>
                                     <td class="p-3.5 text-slate-600">${escapeHtml(pneu.marca || '-')} (${escapeHtml(pneu.medida || '-')})</td>
                                     <td class="p-3.5 font-semibold ${(pneu.sulcoAtual ?? 99) <= 3 ? 'text-red-600' : 'text-slate-800'}">${pneu.sulcoAtual ?? '-'} mm</td>
                                     <td class="p-3.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">${pneu.status}</span></td>
@@ -1136,7 +1257,12 @@ function showHistoricoPneu(pneuId) {
     openModal(`
         <div class="p-6 max-h-[80vh] overflow-y-auto">
             <h3 class="text-lg font-bold text-slate-800 mb-1">Histórico do Pneu ${escapeHtml(pneu.fuego)}</h3>
-            <p class="text-xs text-slate-500 mb-4">${escapeHtml(pneu.marca || '-')} • ${escapeHtml(pneu.medida || '-')}</p>
+            <p class="text-xs text-slate-500 mb-2">${escapeHtml(pneu.marca || '-')} • ${escapeHtml(pneu.medida || '-')}</p>
+            ${(pneu.cadastroProvisorio || pneu.origem === 'provisorio') ? `
+                <div class="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold rounded-xl p-3 mb-4 flex items-center gap-2">
+                    <i class="fas fa-triangle-exclamation"></i>
+                    Cadastro provisório (criado pelo pátio). Complete marca, medida e valor pago quando tiver os dados.
+                </div>` : ''}
 
             <div class="grid grid-cols-4 gap-2 mb-4">
                 <div class="bg-slate-50 rounded-xl p-3 text-center">
