@@ -654,11 +654,17 @@ function getPosicoesEixo(tipoVeiculo, numeroEixo) {
  * para o código interno usado no painel (E1R1, E2R2, etc.).
  */
 function mapearPosicaoPatio(item, tipoVeiculo) {
-    if (item.posicaoCodigo && /^E\d+R[1-4]$/i.test(item.posicaoCodigo)) {
+    // Código já padronizado (eixo ou estepe)
+    if (item.posicaoCodigo && /^(E\d+R[1-4]|EST[12])$/i.test(item.posicaoCodigo)) {
         return item.posicaoCodigo.toUpperCase();
     }
 
-    const eixoMatch = String(item.eixo || item.posicao || '').match(/(\d+)/);
+    // Estepe vindo do pátio (Eixo = "Estepe 1" / "Estepe 2")
+    const eixoStr = String(item.eixo || item.posicao || '');
+    if (/estepe\s*1/i.test(eixoStr) || /est\s*1/i.test(eixoStr)) return 'EST1';
+    if (/estepe\s*2/i.test(eixoStr) || /est\s*2/i.test(eixoStr)) return 'EST2';
+
+    const eixoMatch = eixoStr.match(/(\d+)/);
     const numEixo = eixoMatch ? parseInt(eixoMatch[1], 10) : 1;
 
     const ladoRaw = String(item.lado || '').toLowerCase();
@@ -790,6 +796,22 @@ function renderVeiculosView(container) {
                                             </div>
                                         `;
                                     }).join('')}
+
+                                    ${(tipo === 'carreta' || tipo === 'Carreta') ? `
+                                    <div class="mt-6 pt-4 border-t border-slate-700">
+                                        <div class="text-center text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-3">
+                                            <i class="fas fa-life-ring mr-1"></i> Estepes
+                                        </div>
+                                        <div class="flex items-center justify-center gap-6">
+                                            ${renderSlotPneu(veiculo.id, 'EST1', pneusDoVeiculo)}
+                                            ${renderSlotPneu(veiculo.id, 'EST2', pneusDoVeiculo)}
+                                        </div>
+                                        <div class="flex items-center justify-center gap-6 mt-1">
+                                            <span class="text-[8px] font-bold text-slate-500 font-mono w-12 text-center">EST1</span>
+                                            <span class="text-[8px] font-bold text-slate-500 font-mono w-12 text-center">EST2</span>
+                                        </div>
+                                    </div>
+                                    ` : ''}
                                 </div>
 
                                 <div class="flex justify-center mt-8">
