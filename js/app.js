@@ -375,15 +375,15 @@ function rejeitarSolicitacao(id) {
  * Processa um único item de uma ordem do pátio (troca / medição / reforma / descarte).
  */
 /**
- * Cria um pneu provisório no Firebase (ainda não cadastrado formalmente).
- * Retorna o id gerado e o objeto local para uso imediato no processamento.
+ * Cria dados de pneu provisório (objeto completo).
  */
-function criarPneuProvisorio(fogo, status, extra) {
-    const newRef = window.rtdb.ref('pneus').push();
-    const dados = {
+function criarDadosPneuProvisorio(fogo, status, extra) {
+    extra = extra || {};
+    return {
         fuego: String(fogo).trim(),
         marca: null,
         medida: null,
+        modelo: null,
         sulcoAtual: extra.sulco != null ? extra.sulco : null,
         sulcoInicial: null,
         status: status,
@@ -401,17 +401,39 @@ function criarPneuProvisorio(fogo, status, extra) {
         provisorioEm: Date.now(),
         provisorioOrigem: 'pátio'
     };
-    return { key: newRef.key, dados: dados };
 }
 
 /**
- * Processa um único item de uma ordem do pátio (troca / medição / reforma / descarte).
- * Cria pneu provisório se o nº de fogo ainda não existir no sistema.
- * Acumula fogos criados em updates.__provisoriosCriados (array auxiliar, removido antes do update).
+ * Grava/atualiza campo de pneu sem conflito no multi-path update do Firebase.
+ * Se o pneu foi criado neste mesmo update como objeto completo, mescla no objeto.
+ * Caso contrário, usa path filho (pneus/id/campo).
+ */
+function setPneuUpdate(updates, pneuId, campoOuObjeto, valor) {
+    if (!updates.__pneusFull) updates.__pneusFull = {};
+    if (typeof campoOuObjeto === 'object' && campoOuObjeto !== null) {
+        // objeto completo (criação)
+        updates.__pneusFull[pneuId] = Object.assign({}, campoOuObjeto);
+        updates['pneus/' + pneuId] = updates.__pneusFull[pneuId];
+        return;
+    }
+    const campo = campoOuObjeto;
+    if (updates.__pneusFull[pneuId]) {
+        updates.__pneusFull[pneuId][campo] = valor;
+        updates['pneus/' + pneuId] = updates.__pneusFull[pneuId];
+    } else {
+        updates['pneus/' + pneuId + '/' + campo] = valor;
+    }
+}
+
+/**
+ * Processa um único item de uma ordem do pátio.
+ * Cria pneu provisório se o nº de fogo ainda não existir.
  */
 function processarItemPatio(item, s, updates) {
     const placa = resolverPlacaSolicitacao(s, item);
-    const veiculo = placa ? state.veiculos.find(v => String(v.placa || '').toUpperCase() === String(placa).toUpperCase()) : null;
+    const veiculo = placa
+        ? state.veiculos.find(v => String(v.placa || '').toUpperCase() === String(placa).toUpperCase())
+        : null;
     const tipoVeiculo = (veiculo && veiculo.tipo) || (item.veiculoTipo === 'Carreta' ? 'carreta' : 'cavalo');
     const posicaoCodigo = mapearPosicaoPatio(item, tipoVeiculo);
     const kmVeiculo = Number(s.kmVeiculo) || 0;
@@ -419,14 +441,13 @@ function processarItemPatio(item, s, updates) {
     const acao = item.tipoAcao || 'troca';
 
     if (!updates.__provisoriosCriados) updates.__provisoriosCriados = [];
+    if (!updates.__pneusFull) updates.__pneusFull = {};
 
-    // Helper: busca pneu no state OU já criado nesta mesma aprovação
     function acharPneu(fogo) {
         if (!fogo) return null;
         const f = String(fogo).trim();
         let p = state.pneus.find(x => String(x.fuego) === f);
         if (p) return p;
-        // Já criado nesta rodada de updates?
         const criado = updates.__provisoriosCriados.find(x => String(x.fuego) === f);
         if (criado) return { id: criado.id, ...criado.dados };
         return null;
@@ -437,25 +458,25 @@ function processarItemPatio(item, s, updates) {
         let pneuSaindo = acharPneu(item.fogoSaindo);
 
         if (!pneuSaindo) {
-            // Status inicial conforme a ação
             let statusIni = 'Estoque';
             if (acao === 'descarte') statusIni = 'Descartado';
             else if (acao === 'reforma') statusIni = 'Reforma';
             else if (acao === 'medicao') statusIni = 'Em Uso';
 
-            const prov = criarPneuProvisorio(item.fogoSaindo, statusIni, {
+            const dados = criarDadosPneuProvisorio(item.fogoSaindo, statusIni, {
                 sulco: item.sulcoSaindo,
                 veiculoId: (acao === 'medicao' && veiculo) ? veiculo.id : null,
                 posicao: (acao === 'medicao') ? posicaoCodigo : null,
                 kmInstalacaoAtual: (acao === 'medicao') ? kmVeiculo : null
             });
-            updates[`pneus/${prov.key}`] = prov.dados;
-            updates.__provisoriosCriados.push({ id: prov.key, fuego: item.fogoSaindo, dados: prov.dados });
-            pneuSaindo = { id: prov.key, ...prov.dados };
+            const key = window.rtdb.ref('pneus').push().key;
+            setPneuUpdate(updates, key, dados);
+            updates.__provisoriosCriados.push({ id: key, fuego: String(item.fogoSaindo).trim(), dados: dados });
+            pneuSaindo = { id: key, ...dados };
 
-            const histCad = window.rtdb.ref('historico').push();
-            updates[`historico/${histCad.key}`] = {
-                pneuId: prov.key,
+            const histCad = window.rtdb.ref('historico').push().key;
+            updates['historico/' + histCad] = {
+                pneuId: key,
                 fuego: String(item.fogoSaindo).trim(),
                 tipo: 'Cadastro Provisório (Pátio)',
                 data: Date.now(),
@@ -464,28 +485,27 @@ function processarItemPatio(item, s, updates) {
                 posicao: posicaoCodigo,
                 kmVeiculo: kmVeiculo,
                 usuario: usuario,
-                observacao: 'Criado automaticamente — complete marca, medida e valor quando possível.'
+                observacao: 'Criado automaticamente — complete marca, modelo, tipo de banda e valor quando possível.'
             };
         }
 
         if (acao === 'medicao') {
             if (item.sulcoSaindo != null) {
-                updates[`pneus/${pneuSaindo.id}/sulcoAtual`] = item.sulcoSaindo;
+                setPneuUpdate(updates, pneuSaindo.id, 'sulcoAtual', item.sulcoSaindo);
             }
-            // Se era provisório acabado de criar já com Em Uso, ok; se existia, garante vínculo
             if (veiculo && !pneuSaindo.veiculoId) {
-                updates[`pneus/${pneuSaindo.id}/status`] = 'Em Uso';
-                updates[`pneus/${pneuSaindo.id}/veiculoId`] = veiculo.id;
-                updates[`pneus/${pneuSaindo.id}/posicao`] = posicaoCodigo;
-                updates[`pneus/${pneuSaindo.id}/kmInstalacaoAtual`] = kmVeiculo;
+                setPneuUpdate(updates, pneuSaindo.id, 'status', 'Em Uso');
+                setPneuUpdate(updates, pneuSaindo.id, 'veiculoId', veiculo.id);
+                setPneuUpdate(updates, pneuSaindo.id, 'posicao', posicaoCodigo);
+                setPneuUpdate(updates, pneuSaindo.id, 'kmInstalacaoAtual', kmVeiculo);
             }
-            const histRef = window.rtdb.ref('historico').push();
-            updates[`historico/${histRef.key}`] = {
+            const histRef = window.rtdb.ref('historico').push().key;
+            updates['historico/' + histRef] = {
                 pneuId: pneuSaindo.id,
                 fuego: pneuSaindo.fuego,
                 tipo: 'Medição de Sulco (Pátio)',
                 data: Date.now(),
-                veiculoId: veiculo ? veiculo.id : pneuSaindo.veiculoId || null,
+                veiculoId: veiculo ? veiculo.id : (pneuSaindo.veiculoId || null),
                 placa: placa,
                 posicao: posicaoCodigo,
                 kmVeiculo: kmVeiculo,
@@ -501,21 +521,21 @@ function processarItemPatio(item, s, updates) {
             if (acao === 'descarte') novoStatus = 'Descartado';
             else if (acao === 'reforma') novoStatus = 'Reforma';
 
-            updates[`pneus/${pneuSaindo.id}/status`] = novoStatus;
-            updates[`pneus/${pneuSaindo.id}/veiculoId`] = null;
-            updates[`pneus/${pneuSaindo.id}/posicao`] = null;
-            updates[`pneus/${pneuSaindo.id}/kmInstalacaoAtual`] = null;
-            updates[`pneus/${pneuSaindo.id}/kmRodadoTotal`] = (pneuSaindo.kmRodadoTotal || 0) + cicloKm;
+            setPneuUpdate(updates, pneuSaindo.id, 'status', novoStatus);
+            setPneuUpdate(updates, pneuSaindo.id, 'veiculoId', null);
+            setPneuUpdate(updates, pneuSaindo.id, 'posicao', null);
+            setPneuUpdate(updates, pneuSaindo.id, 'kmInstalacaoAtual', null);
+            setPneuUpdate(updates, pneuSaindo.id, 'kmRodadoTotal', (pneuSaindo.kmRodadoTotal || 0) + cicloKm);
             if (item.sulcoSaindo != null) {
-                updates[`pneus/${pneuSaindo.id}/sulcoAtual`] = item.sulcoSaindo;
+                setPneuUpdate(updates, pneuSaindo.id, 'sulcoAtual', item.sulcoSaindo);
             }
 
             const tipoHist = acao === 'descarte' ? 'Descarte (Pátio)'
                 : acao === 'reforma' ? 'Envio para Reforma (Pátio)'
                 : 'Desmontagem (Pátio)';
 
-            const histRef = window.rtdb.ref('historico').push();
-            updates[`historico/${histRef.key}`] = {
+            const histRef = window.rtdb.ref('historico').push().key;
+            updates['historico/' + histRef] = {
                 pneuId: pneuSaindo.id,
                 fuego: pneuSaindo.fuego,
                 tipo: tipoHist,
@@ -536,18 +556,19 @@ function processarItemPatio(item, s, updates) {
         let pneuEntrando = acharPneu(item.fogoEntrando);
 
         if (!pneuEntrando) {
-            const prov = criarPneuProvisorio(item.fogoEntrando, veiculo ? 'Em Uso' : 'Estoque', {
+            const dados = criarDadosPneuProvisorio(item.fogoEntrando, veiculo ? 'Em Uso' : 'Estoque', {
                 veiculoId: veiculo ? veiculo.id : null,
                 posicao: veiculo ? posicaoCodigo : null,
                 kmInstalacaoAtual: veiculo ? kmVeiculo : null
             });
-            updates[`pneus/${prov.key}`] = prov.dados;
-            updates.__provisoriosCriados.push({ id: prov.key, fuego: item.fogoEntrando, dados: prov.dados });
-            pneuEntrando = { id: prov.key, ...prov.dados };
+            const key = window.rtdb.ref('pneus').push().key;
+            setPneuUpdate(updates, key, dados);
+            updates.__provisoriosCriados.push({ id: key, fuego: String(item.fogoEntrando).trim(), dados: dados });
+            pneuEntrando = { id: key, ...dados };
 
-            const histCad = window.rtdb.ref('historico').push();
-            updates[`historico/${histCad.key}`] = {
-                pneuId: prov.key,
+            const histCad = window.rtdb.ref('historico').push().key;
+            updates['historico/' + histCad] = {
+                pneuId: key,
                 fuego: String(item.fogoEntrando).trim(),
                 tipo: 'Cadastro Provisório (Pátio)',
                 data: Date.now(),
@@ -556,18 +577,18 @@ function processarItemPatio(item, s, updates) {
                 posicao: posicaoCodigo,
                 kmVeiculo: kmVeiculo,
                 usuario: usuario,
-                observacao: 'Criado automaticamente — complete marca, medida e valor quando possível.'
+                observacao: 'Criado automaticamente — complete marca, modelo, tipo de banda e valor quando possível.'
             };
         }
 
         if (veiculo) {
-            updates[`pneus/${pneuEntrando.id}/status`] = 'Em Uso';
-            updates[`pneus/${pneuEntrando.id}/veiculoId`] = veiculo.id;
-            updates[`pneus/${pneuEntrando.id}/posicao`] = posicaoCodigo;
-            updates[`pneus/${pneuEntrando.id}/kmInstalacaoAtual`] = kmVeiculo;
+            setPneuUpdate(updates, pneuEntrando.id, 'status', 'Em Uso');
+            setPneuUpdate(updates, pneuEntrando.id, 'veiculoId', veiculo.id);
+            setPneuUpdate(updates, pneuEntrando.id, 'posicao', posicaoCodigo);
+            setPneuUpdate(updates, pneuEntrando.id, 'kmInstalacaoAtual', kmVeiculo);
 
-            const histRef = window.rtdb.ref('historico').push();
-            updates[`historico/${histRef.key}`] = {
+            const histRef = window.rtdb.ref('historico').push().key;
+            updates['historico/' + histRef] = {
                 pneuId: pneuEntrando.id,
                 fuego: pneuEntrando.fuego,
                 tipo: 'Montagem (Pátio)',
@@ -583,7 +604,7 @@ function processarItemPatio(item, s, updates) {
     }
 
     if (veiculo && kmVeiculo > 0) {
-        updates[`veiculos/${veiculo.id}/kmAtual`] = Math.max(kmVeiculo, veiculo.kmAtual || 0);
+        updates['veiculos/' + veiculo.id + '/kmAtual'] = Math.max(kmVeiculo, veiculo.kmAtual || 0);
     }
 
     return true;
@@ -651,6 +672,7 @@ function aprovarSolicitacao(id) {
 
         const provisorios = updates.__provisoriosCriados || [];
         delete updates.__provisoriosCriados;
+        delete updates.__pneusFull;
 
         const payload = sanitizarUpdatesFirebase(updates);
         const qtdPaths = Object.keys(payload).length;
