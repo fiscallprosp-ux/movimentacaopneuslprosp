@@ -1569,26 +1569,27 @@ function showHistoricoPneu(pneuId) {
 function renderAnaliseView(container) {
     const porMarca = {};
     state.pneus.forEach(pneu => {
-        const marca = pneu.marca || 'Sem marca';
+        const chave = normalizarMarca(pneu.marca) || 'SEM MARCA';
         const { kmTotal, custoTotal } = calcularMetricasPneu(pneu);
-        if (!porMarca[marca]) {
-            porMarca[marca] = {
-                marca, qtdPneus: 0, qtdSemCusto: 0,
+        if (!porMarca[chave]) {
+            porMarca[chave] = {
+                marca: chave,
+                qtdPneus: 0, qtdSemCusto: 0,
                 custoTotalConhecido: 0, kmTotalComCustoConhecido: 0,
                 kmTotalGeral: 0, qtdDescartados: 0, kmTotalDescartados: 0
             };
         }
-        porMarca[marca].qtdPneus++;
-        porMarca[marca].kmTotalGeral += kmTotal;
+        porMarca[chave].qtdPneus++;
+        porMarca[chave].kmTotalGeral += kmTotal;
         if (custoTotal !== null) {
-            porMarca[marca].custoTotalConhecido += custoTotal;
-            porMarca[marca].kmTotalComCustoConhecido += kmTotal;
+            porMarca[chave].custoTotalConhecido += custoTotal;
+            porMarca[chave].kmTotalComCustoConhecido += kmTotal;
         } else {
-            porMarca[marca].qtdSemCusto++;
+            porMarca[chave].qtdSemCusto++;
         }
         if (pneu.status === 'Descartado') {
-            porMarca[marca].qtdDescartados++;
-            porMarca[marca].kmTotalDescartados += kmTotal;
+            porMarca[chave].qtdDescartados++;
+            porMarca[chave].kmTotalDescartados += kmTotal;
         }
     });
 
@@ -1781,6 +1782,12 @@ function showAddPneuHistoricoModal() {
 }
 
 
+/** Unifica marca ignorando maiúsculas/minúsculas e espaços extras */
+function normalizarMarca(marca) {
+    if (!marca || !String(marca).trim()) return '';
+    return String(marca).trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
 function isPneuProvisorio(p) {
     return !!(p && (p.cadastroProvisorio || p.origem === 'provisorio'));
 }
@@ -1822,7 +1829,7 @@ function montarMergeProvisorio(pneuExistente, dadosNovos) {
 function salvarPneuHistorico(e) {
     e.preventDefault();
     const fuego = document.getElementById('ph-fuego').value.trim();
-    const marca = document.getElementById('ph-marca').value.trim();
+    const marca = normalizarMarca(document.getElementById('ph-marca').value);
     const modelo = document.getElementById('ph-modelo').value.trim();
     const tipoBanda = document.getElementById('ph-tipo-banda').value;
     const kmAnterior = parseInt(document.getElementById('ph-km-anterior').value) || 0;
@@ -2012,7 +2019,7 @@ function toggleCampoUsado() {
 function salvarPneusEmLote(e) {
     e.preventDefault();
     const fuegosRaw = document.getElementById('pneu-fuegos').value;
-    const marca = document.getElementById('pneu-marca').value;
+    const marca = normalizarMarca(document.getElementById('pneu-marca').value);
     const modelo = document.getElementById('pneu-modelo').value.trim();
     const tipoBanda = document.getElementById('pneu-tipo-banda').value;
     const valorPagoRaw = document.getElementById('pneu-valor').value;
