@@ -345,14 +345,21 @@ function renderSolicitacoesView(container) {
                         <tbody class="divide-y divide-slate-100">
                             ${historico.map(s => {
                                 const placa = s.placaCavalo || s.placa || '-';
+                                const placaCarreta = s.placaCarreta || '';
                                 const qtd = Array.isArray(s.itens) ? s.itens.length : 1;
                                 return `
                                 <tr>
                                     <td class="p-3 text-slate-500">${s.data ? new Date(s.data).toLocaleDateString('pt-BR') : '-'}</td>
-                                    <td class="p-3 text-slate-700 font-bold">${escapeHtml(placa)}</td>
+                                    <td class="p-3 text-slate-700 font-bold">${escapeHtml(placa)}${placaCarreta ? ' <span class="text-slate-400 font-normal">+ ' + escapeHtml(placaCarreta) + '</span>' : ''}</td>
                                     <td class="p-3 text-slate-500">${qtd} item(ns)</td>
                                     <td class="p-3">
                                         <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${s.status === 'aprovada' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">${(s.status || '').toUpperCase()}</span>
+                                    </td>
+                                    <td class="p-3 text-right">
+                                        <button onclick="reabrirSolicitacao('${s.id}')" title="Voltar para pendente e aprovar de novo"
+                                                class="bg-amber-100 text-amber-800 px-2.5 py-1 rounded-lg hover:bg-amber-200 font-bold text-[10px]">
+                                            <i class="fas fa-rotate-left"></i> Reabrir
+                                        </button>
                                     </td>
                                 </tr>`;
                             }).join('')}
@@ -369,6 +376,39 @@ function rejeitarSolicitacao(id) {
         window.rtdb.ref(`solicitacoes/${id}/status`).set('rejeitada')
             .then(() => showToast('Solicitação rejeitada.', 'success'));
     }
+}
+
+/**
+ * Volta solicitação aprovada/rejeitada para pendente.
+ * NÃO desfaz automaticamente movimentos de estoque já feitos — cadastre o veículo
+ * e ajuste pneus se necessário antes de aprovar de novo.
+ */
+function reabrirSolicitacao(id) {
+    const s = state.solicitacoes.find(x => x.id === id);
+    if (!s) return;
+    if (s.status === 'pendente') {
+        showToast('Esta solicitação já está pendente.', 'error');
+        return;
+    }
+    const ok = confirm(
+        'Reabrir esta solicitação para aprovação?\n\n' +
+        'Atenção: o estoque NÃO volta automaticamente ao estado anterior.\n' +
+        'Se a aprovação anterior já moveu/criou pneus, revise o estoque antes de aprovar de novo.\n\n' +
+        'Cadastre a placa do cavalo/carreta se ainda não existir e então aprove novamente.'
+    );
+    if (!ok) return;
+
+    window.rtdb.ref('solicitacoes/' + id).update({
+        status: 'pendente',
+        reabertaEm: Date.now(),
+        reabertaPor: getUsuarioAtual(),
+        aprovadoEm: null,
+        aprovadoPor: null
+    }).then(() => {
+        showToast('Solicitação reaberta — aparece de novo em Pendentes.', 'success');
+        state.currentTab = 'solicitacoes';
+        renderApp();
+    }).catch(e => showToast('Erro ao reabrir: ' + e.message, 'error'));
 }
 
 /**
