@@ -1780,6 +1780,45 @@ function showAddPneuHistoricoModal() {
     `);
 }
 
+
+function isPneuProvisorio(p) {
+    return !!(p && (p.cadastroProvisorio || p.origem === 'provisorio'));
+}
+
+/**
+ * Preenche só campos vazios do pneu provisório com dados do formulário.
+ * Não sobrescreve status/posição/veiculoId já definidos pelo pátio.
+ */
+function montarMergeProvisorio(pneuExistente, dadosNovos) {
+    const patch = {};
+    const campos = ['marca', 'modelo', 'tipoBanda', 'medida', 'valorPago', 'dataCompra'];
+    campos.forEach(c => {
+        const novo = dadosNovos[c];
+        const atual = pneuExistente[c];
+        const vazio = atual === null || atual === undefined || atual === '';
+        if (vazio && novo !== null && novo !== undefined && novo !== '') {
+            patch[c] = novo;
+        }
+    });
+    // km e reformas: só se o provisório estiver zerado e o form informar > 0
+    if ((pneuExistente.kmRodadoTotal || 0) === 0 && (dadosNovos.kmRodadoTotal || 0) > 0) {
+        patch.kmRodadoTotal = dadosNovos.kmRodadoTotal;
+    }
+    if ((pneuExistente.qtdReformas || 0) === 0 && (dadosNovos.qtdReformas || 0) > 0) {
+        patch.qtdReformas = dadosNovos.qtdReformas;
+    }
+    if ((pneuExistente.custoReformasTotal || 0) === 0 && (dadosNovos.custoReformasTotal || 0) > 0) {
+        patch.custoReformasTotal = dadosNovos.custoReformasTotal;
+    }
+    // remove flag provisório ao completar dados básicos
+    patch.cadastroProvisorio = false;
+    if (pneuExistente.origem === 'provisorio') {
+        patch.origem = dadosNovos.origem || 'completado';
+    }
+    patch.completadoEm = Date.now();
+    return patch;
+}
+
 function salvarPneuHistorico(e) {
     e.preventDefault();
     const fuego = document.getElementById('ph-fuego').value.trim();
@@ -1794,8 +1833,38 @@ function salvarPneuHistorico(e) {
     const custoReformas = custoReformasRaw === '' ? 0 : parseFloat(custoReformasRaw);
     const status = document.getElementById('ph-status').value;
 
-    if (state.pneus.some(p => p.fuego === fuego)) {
+    const existente = state.pneus.find(p => String(p.fuego) === String(fuego));
+    if (existente && !isPneuProvisorio(existente)) {
         showToast(`Já existe um pneu cadastrado com o número de fogo ${fuego}!`, "error");
+        return;
+    }
+
+    // Merge em provisório: só completa dados, sem mexer em posição/status do pátio
+    if (existente && isPneuProvisorio(existente)) {
+        const patch = montarMergeProvisorio(existente, {
+            marca, modelo, tipoBanda, valorPago,
+            kmRodadoTotal: kmAnterior,
+            qtdReformas: qtdReformas,
+            custoReformasTotal: custoReformas,
+            origem: 'completado'
+        });
+        const updates = {};
+        Object.keys(patch).forEach(k => { updates['pneus/' + existente.id + '/' + k] = patch[k]; });
+        const histRef = window.rtdb.ref('historico').push();
+        updates['historico/' + histRef.key] = {
+            pneuId: existente.id,
+            fuego: fuego,
+            tipo: 'Complemento de cadastro (provisório)',
+            data: Date.now(),
+            marca: marca || null,
+            modelo: modelo || null,
+            tipoBanda: tipoBanda || null,
+            usuario: getUsuarioAtual()
+        };
+        window.rtdb.ref().update(updates).then(() => {
+            closeModal();
+            showToast('Pneu #' + fuego + ' era provisório — dados completados (marca/modelo/tipo). Posição e status mantidos.', 'success');
+        }).catch(e => showToast('Erro: ' + e.message, 'error'));
         return;
     }
 
@@ -1953,21 +2022,31 @@ function salvarPneusEmLote(e) {
     const recapagensExistentes = usado ? (parseInt(document.getElementById('pneu-recapagens-existentes').value) || 0) : 0;
 
     const fuegosDigitados = fuegosRaw.split(/[\n,]+/).map(f => f.trim()).filter(f => f.length > 0);
-    const fuegosExistentes = new Set(state.pneus.map(p => p.fuego));
+    const porFogo = {};
+    state.pneus.forEach(p => { porFogo[String(p.fuego)] = p; });
 
-    const fuegos = fuegosDigitados.filter(f => !fuegosExistentes.has(f));
-    const duplicados = fuegosDigitados.filter(f => fuegosExistentes.has(f));
+    const paraCriar = [];
+    const paraMerge = [];
+    const bloqueados = [];
 
-    if (fuegos.length === 0) {
-        showToast(`Todos os números de fogo informados já existem: ${duplicados.join(', ')}`, "error");
+    fuegosDigitados.forEach(f => {
+        const ex = porFogo[String(f)];
+        if (!ex) paraCriar.push(f);
+        else if (isPneuProvisorio(ex)) paraMerge.push(ex);
+        else bloqueados.push(f);
+    });
+
+    if (paraCriar.length === 0 && paraMerge.length === 0) {
+        showToast('Todos os números de fogo já existem com cadastro completo: ' + bloqueados.join(', '), 'error');
         return;
     }
 
     const updates = {};
+    const origem = usado ? 'usado' : 'novo';
 
-    fuegos.forEach(fuego => {
+    paraCriar.forEach(fuego => {
         const newRef = window.rtdb.ref('pneus').push();
-        updates[`pneus/${newRef.key}`] = {
+        updates['pneus/' + newRef.key] = {
             fuego: fuego,
             marca: marca,
             medida: null,
@@ -1984,10 +2063,11 @@ function salvarPneusEmLote(e) {
             kmRodadoTotal: 0,
             custoReformasTotal: 0,
             qtdReformas: recapagensExistentes,
-            origem: usado ? 'usado' : 'novo'
+            origem: origem,
+            cadastroProvisorio: false
         };
         const histRef = window.rtdb.ref('historico').push();
-        updates[`historico/${histRef.key}`] = {
+        updates['historico/' + histRef.key] = {
             pneuId: newRef.key,
             fuego: fuego,
             tipo: usado ? 'Cadastro (pneu usado)' : 'Cadastro',
@@ -2003,12 +2083,40 @@ function salvarPneusEmLote(e) {
         };
     });
 
+    paraMerge.forEach(ex => {
+        const patch = montarMergeProvisorio(ex, {
+            marca: marca,
+            modelo: modelo,
+            tipoBanda: tipoBanda,
+            valorPago: valorPago,
+            dataCompra: dataCompra,
+            qtdReformas: recapagensExistentes,
+            origem: origem
+        });
+        Object.keys(patch).forEach(k => {
+            updates['pneus/' + ex.id + '/' + k] = patch[k];
+        });
+        const histRef = window.rtdb.ref('historico').push();
+        updates['historico/' + histRef.key] = {
+            pneuId: ex.id,
+            fuego: ex.fuego,
+            tipo: 'Complemento de cadastro (provisório)',
+            data: Date.now(),
+            marca: marca || null,
+            modelo: modelo || null,
+            tipoBanda: tipoBanda || null,
+            usuario: getUsuarioAtual()
+        };
+    });
+
     window.rtdb.ref().update(updates).then(() => {
         closeModal();
-        let msg = `${fuegos.length} pneu(s) cadastrado(s)!`;
-        if (duplicados.length > 0) msg += ` (${duplicados.length} ignorado(s) por já existir: ${duplicados.join(', ')})`;
-        showToast(msg, "success");
-    });
+        let msg = '';
+        if (paraCriar.length) msg += paraCriar.length + ' cadastrado(s). ';
+        if (paraMerge.length) msg += paraMerge.length + ' provisório(s) completado(s): ' + paraMerge.map(p => '#' + p.fuego).join(', ') + '. ';
+        if (bloqueados.length) msg += bloqueados.length + ' ignorado(s) (já completos): ' + bloqueados.join(', ') + '.';
+        showToast(msg.trim(), 'success');
+    }).catch(e => showToast('Erro: ' + e.message, 'error'));
 }
 
 function deletarPneu(id) {
