@@ -307,6 +307,10 @@ function renderSolicitacoesView(container) {
                                     </div>
                                 </div>
                                 <div class="flex gap-1.5 shrink-0">
+                                    <button onclick="showEditSolicitacaoModal('${s.id}')" title="Editar solicitação antes de aprovar"
+                                            class="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-200 font-bold text-xs">
+                                        <i class="fas fa-pen"></i> Editar
+                                    </button>
                                     <button onclick="aprovarSolicitacao('${s.id}')" title="Aprovar e processar estoque"
                                             class="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg hover:bg-emerald-200 font-bold text-xs">
                                         <i class="fas fa-check"></i> Aprovar
@@ -369,6 +373,160 @@ function renderSolicitacoesView(container) {
             </div>` : ''}
         </div>
     `;
+}
+
+function showEditSolicitacaoModal(id) {
+    const s = state.solicitacoes.find(x => x.id === id);
+    if (!s || s.status !== 'pendente') {
+        showToast('Só é possível editar solicitações pendentes.', 'error');
+        return;
+    }
+
+    let itens = Array.isArray(s.itens) && s.itens.length > 0
+        ? s.itens.map((it, idx) => ({ ...it, _idx: idx }))
+        : [{
+            _idx: 0,
+            veiculoTipo: 'Cavalo',
+            posicao: s.posicao || '',
+            posicaoCodigo: s.posicao || '',
+            tipoAcao: s.tipoAcao || 'troca',
+            fogoSaindo: s.pneuSaindoFogo || '',
+            fogoEntrando: s.pneuEntrandoFogo || '',
+            observacao: s.observacao || ''
+        }];
+
+    const itensHtml = itens.map((item, i) => `
+        <div class="border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50">
+            <div class="text-[10px] font-bold text-slate-500 uppercase">Item ${i + 1}</div>
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Pertence a</label>
+                    <select id="edit-item-tipo-${i}" class="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs">
+                        <option value="Cavalo" ${item.veiculoTipo === 'Cavalo' ? 'selected' : ''}>Cavalo</option>
+                        <option value="Carreta" ${item.veiculoTipo === 'Carreta' ? 'selected' : ''}>Carreta</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Tipo serviço</label>
+                    <select id="edit-item-acao-${i}" class="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs">
+                        <option value="troca" ${item.tipoAcao === 'troca' ? 'selected' : ''}>Troca</option>
+                        <option value="medicao" ${item.tipoAcao === 'medicao' ? 'selected' : ''}>Medição</option>
+                        <option value="reforma" ${item.tipoAcao === 'reforma' ? 'selected' : ''}>Reforma</option>
+                        <option value="descarte" ${item.tipoAcao === 'descarte' ? 'selected' : ''}>Descarte</option>
+                    </select>
+                </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Posição (ex: E1R1)</label>
+                    <input type="text" id="edit-item-pos-${i}" value="${escapeHtml(item.posicaoCodigo || item.posicao || '')}"
+                           class="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono uppercase">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Fogo saindo</label>
+                    <input type="text" id="edit-item-sai-${i}" value="${escapeHtml(item.fogoSaindo || '')}"
+                           class="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Fogo entrando</label>
+                    <input type="text" id="edit-item-entra-${i}" value="${escapeHtml(item.fogoEntrando || '')}"
+                           class="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono">
+                </div>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Observação</label>
+                <input type="text" id="edit-item-obs-${i}" value="${escapeHtml(item.observacao || '')}"
+                       class="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs">
+            </div>
+        </div>
+    `).join('');
+
+    openModal(`
+        <div class="p-6 max-h-[85vh] overflow-y-auto">
+            <h3 class="text-lg font-bold text-slate-800 mb-1">Editar solicitação</h3>
+            <p class="text-xs text-slate-500 mb-4">Corrija placas, km ou itens antes de aprovar. Ex.: placa da carreta digitada errada.</p>
+            <form onsubmit="salvarEdicaoSolicitacao(event, '${s.id}', ${itens.length})" class="space-y-4">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">PLACA CAVALO</label>
+                        <input type="text" id="edit-sol-cavalo" value="${escapeHtml(s.placaCavalo || s.placa || '')}"
+                               class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-mono uppercase" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">PLACA CARRETA</label>
+                        <input type="text" id="edit-sol-carreta" value="${escapeHtml(s.placaCarreta || '')}"
+                               class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-mono uppercase"
+                               placeholder="Opcional">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">KM DO VEÍCULO</label>
+                    <input type="number" id="edit-sol-km" value="${s.kmVeiculo ?? ''}"
+                           class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs" required>
+                </div>
+                <div class="space-y-2">
+                    <div class="text-xs font-bold text-slate-600">ITENS (${itens.length})</div>
+                    ${itensHtml}
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">CANCELAR</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">SALVAR CORREÇÕES</button>
+                </div>
+            </form>
+        </div>
+    `);
+}
+
+function salvarEdicaoSolicitacao(e, id, qtdItens) {
+    e.preventDefault();
+    const s = state.solicitacoes.find(x => x.id === id);
+    if (!s || s.status !== 'pendente') {
+        showToast('Solicitação não está mais pendente.', 'error');
+        return;
+    }
+
+    const placaCavalo = document.getElementById('edit-sol-cavalo').value.trim().toUpperCase();
+    const placaCarreta = document.getElementById('edit-sol-carreta').value.trim().toUpperCase();
+    const kmVeiculo = parseInt(document.getElementById('edit-sol-km').value, 10);
+
+    if (!placaCavalo) {
+        showToast('Informe a placa do cavalo.', 'error');
+        return;
+    }
+    if (isNaN(kmVeiculo) || kmVeiculo < 0) {
+        showToast('Informe um KM válido.', 'error');
+        return;
+    }
+
+    const itensOriginais = Array.isArray(s.itens) && s.itens.length > 0 ? s.itens : [{}];
+    const itens = [];
+    for (let i = 0; i < qtdItens; i++) {
+        const base = itensOriginais[i] || {};
+        const pos = (document.getElementById('edit-item-pos-' + i).value || '').trim().toUpperCase();
+        itens.push({
+            ...base,
+            veiculoTipo: document.getElementById('edit-item-tipo-' + i).value,
+            tipoAcao: document.getElementById('edit-item-acao-' + i).value,
+            posicao: pos,
+            posicaoCodigo: pos,
+            fogoSaindo: (document.getElementById('edit-item-sai-' + i).value || '').trim(),
+            fogoEntrando: (document.getElementById('edit-item-entra-' + i).value || '').trim(),
+            observacao: (document.getElementById('edit-item-obs-' + i).value || '').trim()
+        });
+    }
+
+    window.rtdb.ref('solicitacoes/' + id).update({
+        placaCavalo: placaCavalo,
+        placaCarreta: placaCarreta || null,
+        kmVeiculo: kmVeiculo,
+        itens: itens,
+        totalItens: itens.length,
+        editadoEm: Date.now(),
+        editadoPor: getUsuarioAtual()
+    }).then(() => {
+        closeModal();
+        showToast('Solicitação corrigida. Agora você pode aprovar.', 'success');
+    }).catch(err => showToast('Erro ao salvar: ' + err.message, 'error'));
 }
 
 function rejeitarSolicitacao(id) {
