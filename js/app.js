@@ -48,6 +48,7 @@ const state = {
     historico: [],
     solicitacoes: [], // NOVA ADIÇÃO PARA O PÁTIO
     currentTab: 'carretas',
+    mostrarArquivados: false,
     searchTerm: ''
 };
 
@@ -185,9 +186,9 @@ function updateQuickStats() {
     const elReforma = document.getElementById('stat-reforma');
     const badgeSolicitacoes = document.getElementById('badge-solicitacoes'); // INTEGRAÇÃO PÁTIO
 
-    if (elUso) elUso.innerText = state.pneus.filter(p => p.status === 'Em Uso').length;
-    if (elEstoque) elEstoque.innerText = state.pneus.filter(p => p.status === 'Estoque').length;
-    if (elReforma) elReforma.innerText = state.pneus.filter(p => p.status === 'Reforma').length;
+    if (elUso) elUso.innerText = state.pneus.filter(p => !p.arquivado && p.status === 'Em Uso').length;
+    if (elEstoque) elEstoque.innerText = state.pneus.filter(p => !p.arquivado && p.status === 'Estoque').length;
+    if (elReforma) elReforma.innerText = state.pneus.filter(p => !p.arquivado && p.status === 'Reforma').length;
 
     if (badgeSolicitacoes) {
         const pendentes = state.solicitacoes.filter(s => s.status === 'pendente').length;
@@ -515,7 +516,7 @@ function salvarEdicaoSolicitacao(e, id, qtdItens) {
         });
     }
 
-    window.rtdb.ref('solicitacoes/' + id).update({
+    salvarSolicitacaoPendente(id, {
         placaCavalo: placaCavalo,
         placaCarreta: placaCarreta || null,
         kmVeiculo: kmVeiculo,
@@ -531,42 +532,75 @@ function salvarEdicaoSolicitacao(e, id, qtdItens) {
 
 function rejeitarSolicitacao(id) {
     if (confirm('Tem certeza que deseja REJEITAR esta solicitação do pátio?')) {
-        window.rtdb.ref(`solicitacoes/${id}/status`).set('rejeitada')
-            .then(() => showToast('Solicitação rejeitada.', 'success'));
+        return salvarSolicitacaoPendente(id, { status: 'rejeitada' })
+            .then(() => showToast('Solicitação rejeitada.', 'success'))
+            .catch(erro => showToast(erro.message, 'error'));
     }
 }
 
-/**
- * Volta solicitação aprovada/rejeitada para pendente.
- * NÃO desfaz automaticamente movimentos de estoque já feitos — cadastre o veículo
- * e ajuste pneus se necessário antes de aprovar de novo.
- */
-function reabrirSolicitacao(id) {
-    const s = state.solicitacoes.find(x => x.id === id);
-    if (!s) return;
-    if (s.status === 'pendente') {
-        showToast('Esta solicitação já está pendente.', 'error');
-        return;
-    }
-    const ok = confirm(
-        'Reabrir esta solicitação para aprovação?\n\n' +
-        'Atenção: o estoque NÃO volta automaticamente ao estado anterior.\n' +
-        'Se a aprovação anterior já moveu/criou pneus, revise o estoque antes de aprovar de novo.\n\n' +
-        'Cadastre a placa do cavalo/carreta se ainda não existir e então aprove novamente.'
-    );
-    if (!ok) return;
+function salvarSolicitacaoPendente(id, patch) {
+    return executarOperacaoSegura(raiz => {
+        const s = (raiz.solicitacoes || {})[id];
+        if (!s || s.status !== 'pendente') throw new Error('Esta solicitação não está mais pendente. Atualize a tela.');
+        Object.assign(s, patch);
+        return raiz;
+    });
+}
 
-    window.rtdb.ref('solicitacoes/' + id).update({
-        status: 'pendente',
-        reabertaEm: Date.now(),
-        reabertaPor: getUsuarioAtual(),
-        aprovadoEm: null,
-        aprovadoPor: null
-    }).then(() => {
-        showToast('Solicitação reaberta — aparece de novo em Pendentes.', 'success');
+// Uma transação confirma o estado atual e grava toda a operação de uma vez.
+async function executarOperacaoSegura(preparar) {
+    const ref = window.rtdb.ref();
+    // Mantém a leitura ativa: once() sozinho pode liberar o cache antes da transação.
+    let carregado;
+    const pronto = new Promise((resolve, reject) => {
+        carregado = () => resolve();
+        ref.on('value', carregado, reject);
+    });
+    try {
+        await pronto;
+        let falha;
+        const resultado = await ref.transaction(atual => {
+            falha = null;
+            try { return preparar(OperacoesPneus.copiar(atual || {})); }
+            catch (erro) { falha = erro; return; }
+        }, undefined, false);
+        if (!resultado.committed) throw falha || new Error('A operação não foi concluída. Atualize a tela e tente novamente.');
+        return resultado;
+    } finally { ref.off('value', carregado); }
+}
+
+function salvarUpdatesSeguros(updates) {
+    const payload = sanitizarUpdatesFirebase(updates);
+    const entidades = [...new Set(Object.keys(payload).filter(p => /^(pneus|veiculos)\//.test(p)).map(p => p.split('/').slice(0, 2).join('/')))];
+    const anteriores = entidades.map(path => {
+        const [colecao, id] = path.split('/');
+        const registro = state[colecao].find(x => x.id === id);
+        const valor = registro ? { ...registro } : null;
+        if (valor) delete valor.id;
+        return { colecao, id, valor };
+    });
+    return executarOperacaoSegura(raiz => {
+        anteriores.forEach(e => {
+            if (!OperacoesPneus.igual((raiz[e.colecao] || {})[e.id], e.valor)) {
+                throw new Error('Os dados mudaram em outra sessão. Confira a tela e tente novamente.');
+            }
+        });
+        OperacoesPneus.aplicar(raiz, payload);
+        OperacoesPneus.validarPosicoes(raiz, anteriores.filter(e => e.colecao === 'pneus').map(e => e.id));
+        return raiz;
+    });
+}
+
+async function reabrirSolicitacao(id) {
+    if (!confirm('Reabrir esta solicitação? Se aprovada, as movimentações serão estornadas somente se não houver alterações posteriores. Cadastros provisórios serão preservados em estoque.')) return;
+    const usuario = getUsuarioAtual(), data = Date.now();
+    const historicoId = window.rtdb.ref('historico').push().key;
+    try {
+        await executarOperacaoSegura(raiz => OperacoesPneus.estornar(raiz, id, usuario, data, historicoId));
+        showToast('Solicitação reaberta. O histórico do estorno foi preservado.', 'success');
         state.currentTab = 'solicitacoes';
         renderApp();
-    }).catch(e => showToast('Erro ao reabrir: ' + e.message, 'error'));
+    } catch (erro) { showToast(erro.message, 'error'); }
 }
 
 /**
@@ -627,16 +661,21 @@ function setPneuUpdate(updates, pneuId, campoOuObjeto, valor) {
  * Processa um único item de uma ordem do pátio.
  * Cria pneu provisório se o nº de fogo ainda não existir.
  */
-function processarItemPatio(item, s, updates) {
+function processarItemPatio(item, s, updates, contexto = state) {
     const placa = resolverPlacaSolicitacao(s, item);
     const veiculo = placa
-        ? state.veiculos.find(v => String(v.placa || '').toUpperCase() === String(placa).toUpperCase())
+        ? contexto.veiculos.find(v => String(v.placa || '').toUpperCase() === String(placa).toUpperCase())
         : null;
     const tipoVeiculo = (veiculo && veiculo.tipo) || (item.veiculoTipo === 'Carreta' ? 'carreta' : 'cavalo');
     const posicaoCodigo = mapearPosicaoPatio(item, tipoVeiculo);
     const kmVeiculo = Number(s.kmVeiculo) || 0;
-    const usuario = s.solicitante || 'pátio';
+    const usuario = getUsuarioAtual();
+    if (!veiculo) throw new Error('Cadastre e confira a placa do veículo antes de aprovar.');
+    if (!Number.isFinite(Number(s.kmVeiculo)) || Number(s.kmVeiculo) < (veiculo.kmAtual || 0)) throw new Error('KM inválido ou inferior ao atual do veículo.');
     const acao = item.tipoAcao || 'troca';
+    if (!['troca', 'medicao', 'reforma', 'descarte'].includes(acao)) throw new Error('Tipo de serviço inválido.');
+    if (acao !== 'troca' && !item.fogoSaindo) throw new Error('Informe o pneu para este serviço.');
+    if (acao === 'troca' && !item.fogoSaindo && !item.fogoEntrando) throw new Error('Informe os pneus da troca.');
 
     if (!updates.__provisoriosCriados) updates.__provisoriosCriados = [];
     if (!updates.__pneusFull) updates.__pneusFull = {};
@@ -644,7 +683,8 @@ function processarItemPatio(item, s, updates) {
     function acharPneu(fogo) {
         if (!fogo) return null;
         const f = String(fogo).trim();
-        let p = state.pneus.find(x => String(x.fuego) === f);
+        let p = contexto.pneus.find(x => String(x.fuego) === f);
+        if (p && p.arquivado) throw new Error('Pneu #' + f + ' arquivado. Restaure o cadastro antes de movimentar.');
         if (p) return p;
         const criado = updates.__provisoriosCriados.find(x => String(x.fuego) === f);
         if (criado) return { id: criado.id, ...criado.dados };
@@ -687,6 +727,9 @@ function processarItemPatio(item, s, updates) {
             };
         }
 
+        if (pneuSaindo.veiculoId && (pneuSaindo.veiculoId !== veiculo.id || pneuSaindo.posicao !== posicaoCodigo)) {
+            throw new Error('O pneu saindo está em outro veículo ou posição.');
+        }
         if (acao === 'medicao') {
             if (item.sulcoSaindo != null) {
                 setPneuUpdate(updates, pneuSaindo.id, 'sulcoAtual', item.sulcoSaindo);
@@ -711,6 +754,7 @@ function processarItemPatio(item, s, updates) {
                 usuario: usuario
             };
         } else {
+            if (pneuSaindo.kmInstalacaoAtual != null && kmVeiculo < pneuSaindo.kmInstalacaoAtual) throw new Error('KM inferior ao da instalação.');
             const cicloKm = pneuSaindo.kmInstalacaoAtual != null
                 ? Math.max(0, kmVeiculo - pneuSaindo.kmInstalacaoAtual)
                 : 0;
@@ -751,7 +795,11 @@ function processarItemPatio(item, s, updates) {
 
     // --- Pneu entrando (somente troca) ---
     if (acao === 'troca' && item.fogoEntrando) {
+        if (String(item.fogoEntrando).trim() === String(item.fogoSaindo || '').trim()) throw new Error('Os pneus entrando e saindo precisam ser diferentes.');
         let pneuEntrando = acharPneu(item.fogoEntrando);
+        if (pneuEntrando && (pneuEntrando.veiculoId || pneuEntrando.status !== 'Estoque')) {
+            throw new Error('O pneu entrando precisa estar disponível em estoque.');
+        }
 
         if (!pneuEntrando) {
             const dados = criarDadosPneuProvisorio(item.fogoEntrando, veiculo ? 'Em Uso' : 'Estoque', {
@@ -831,69 +879,32 @@ function sanitizarUpdatesFirebase(obj) {
     return out;
 }
 
-function aprovarSolicitacao(id) {
+async function aprovarSolicitacao(id) {
+    if (!confirm('Aprovar solicitação? Pneus não cadastrados serão criados como provisórios.')) return;
+    const usuario = getUsuarioAtual(), data = Date.now();
+    const operacaoId = window.rtdb.ref('operacoesPatio').push().key;
     try {
-        const s = state.solicitacoes.find(x => x.id === id);
-        if (!s) {
-            showToast('Solicitação não encontrada.', 'error');
-            return;
-        }
-
-        if (!confirm('Aprovar solicitação? Pneus ainda não cadastrados serão criados como provisórios para você completar depois.')) return;
-
-        let itens = Array.isArray(s.itens) && s.itens.length > 0
-            ? s.itens
-            : [{
-                veiculoTipo: 'Cavalo',
-                posicao: s.posicao,
-                posicaoCodigo: s.posicao,
-                tipoAcao: s.tipoAcao || 'troca',
-                fogoSaindo: s.pneuSaindoFogo,
-                sulcoSaindo: s.sulcoSaindo,
-                fogoEntrando: s.pneuEntrandoFogo,
-                observacao: s.observacao
+        await executarOperacaoSegura(raiz => {
+            const s = (raiz.solicitacoes || {})[id];
+            if (!s || s.status !== 'pendente') throw new Error('Esta solicitação não está mais pendente.');
+            const antes = OperacoesPneus.copiar(raiz);
+            const itens = Array.isArray(s.itens) && s.itens.length ? s.itens : [{
+                veiculoTipo: 'Cavalo', posicao: s.posicao, posicaoCodigo: s.posicao,
+                tipoAcao: s.tipoAcao || 'troca', fogoSaindo: s.pneuSaindoFogo,
+                sulcoSaindo: s.sulcoSaindo, fogoEntrando: s.pneuEntrandoFogo, observacao: s.observacao
             }];
-
-        const updates = {};
-        updates['solicitacoes/' + id + '/status'] = 'aprovada';
-        updates['solicitacoes/' + id + '/aprovadoEm'] = Date.now();
-        updates['solicitacoes/' + id + '/aprovadoPor'] = getUsuarioAtual();
-
-        itens.forEach(function (item) {
-            try {
-                processarItemPatio(item, s, updates);
-            } catch (errItem) {
-                console.error('Erro no item', item, errItem);
-                showToast('Erro ao processar item: ' + (errItem && errItem.message ? errItem.message : errItem), 'error');
-            }
+            const updates = {};
+            itens.forEach(item => {
+                const contexto = {};
+                ['pneus', 'veiculos'].forEach(c => { contexto[c] = Object.entries(raiz[c] || {}).map(([id, p]) => ({ ...p, id })); });
+                processarItemPatio(item, s, updates, contexto);
+                OperacoesPneus.aplicar(raiz, sanitizarUpdatesFirebase(updates));
+            });
+            if (!Object.keys(updates).some(p => p.startsWith('historico/'))) throw new Error('A solicitação não possui movimentações válidas.');
+            return OperacoesPneus.registrarAprovacao(antes, raiz, sanitizarUpdatesFirebase(updates), id, operacaoId, usuario, data);
         });
-
-        const provisorios = updates.__provisoriosCriados || [];
-        delete updates.__provisoriosCriados;
-        delete updates.__pneusFull;
-
-        const payload = sanitizarUpdatesFirebase(updates);
-        const qtdPaths = Object.keys(payload).length;
-        if (qtdPaths === 0) {
-            showToast('Nada para atualizar.', 'error');
-            return;
-        }
-
-        window.rtdb.ref().update(payload).then(function () {
-            if (provisorios.length > 0) {
-                const lista = provisorios.map(function (p) { return '#' + p.fuego; }).join(', ');
-                showToast('Aprovado! Pneu(s) provisório(s): ' + lista + ' — complete os dados depois.', 'success');
-            } else {
-                showToast('Solicitação processada e estoque integrado!', 'success');
-            }
-        }).catch(function (e) {
-            console.error('Firebase update error', e, payload);
-            showToast('Erro Firebase: ' + (e.code || '') + ' ' + e.message, 'error');
-        });
-    } catch (err) {
-        console.error('aprovarSolicitacao', err);
-        showToast('Erro ao aprovar: ' + (err && err.message ? err.message : err), 'error');
-    }
+        showToast('Solicitação aprovada. Movimentações e registro de estorno salvos.', 'success');
+    } catch (erro) { showToast('Não foi possível aprovar: ' + erro.message, 'error'); }
 }
 
 // ====================================================
@@ -988,7 +999,7 @@ function renderVeiculosView(container) {
         (v.modelo && v.modelo.toLowerCase().includes(state.searchTerm.toLowerCase()))
     );
 
-    const pneusEstoque = state.pneus.filter(p => p.status === 'Estoque');
+    const pneusEstoque = state.pneus.filter(p => !p.arquivado && p.status === 'Estoque');
 
     container.innerHTML = `
         <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
@@ -1205,6 +1216,8 @@ function handleDropToSlot(e, veiculoId, posicao) {
     const veiculo = state.veiculos.find(v => v.id === veiculoId);
     if (!pneu || !veiculo) return;
 
+    if (pneu.arquivado || pneu.status !== 'Estoque') { showToast('Somente pneus ativos em estoque podem ser montados.', 'error'); return; }
+    if (state.pneus.some(p => !p.arquivado && p.veiculoId === veiculoId && p.posicao === posicao)) { showToast('Posição ocupada. Retire o pneu atual antes de montar outro.', 'error'); return; }
     showMontarModal(pneu, veiculo, posicao);
 }
 
@@ -1234,7 +1247,8 @@ function confirmarMontagem(e, pneuId, veiculoId, posicao) {
     const veiculo = state.veiculos.find(v => v.id === veiculoId);
     if (!pneu || !veiculo) { closeModal(); return; }
 
-    if (km < (veiculo.kmAtual || 0)) {
+    if (pneu.arquivado || pneu.status !== 'Estoque') { showToast('O pneu não está disponível em estoque.', 'error'); return; }
+    if (!Number.isFinite(km) || km < 0 || km < (veiculo.kmAtual || 0)) {
         showToast(`Atenção: KM informado (${km}) é menor que o KM atual do veículo (${veiculo.kmAtual || 0}). Verifique antes de confirmar.`, "error");
         return;
     }
@@ -1260,10 +1274,10 @@ function confirmarMontagem(e, pneuId, veiculoId, posicao) {
         usuario: getUsuarioAtual()
     };
 
-    window.rtdb.ref().update(updates).then(() => {
+    salvarUpdatesSeguros(updates).then(() => {
         closeModal();
         showToast(`Pneu montado na posição ${posicao}!`, "success");
-    });
+    }).catch(erro => showToast(erro.message, 'error'));
 }
 
 function handleDropToZone(e, destinoStatus) {
@@ -1333,6 +1347,7 @@ function confirmarMovimentacao(e, pneuId, destino) {
 
     const pneu = state.pneus.find(p => p.id === pneuId);
     if (!pneu) { closeModal(); return; }
+    if (pneu.arquivado) { showToast('Restaure o cadastro antes de movimentar.', 'error'); return; }
     if (!['Estoque', 'Reforma', 'Descartado', 'Vendido'].includes(destino)) return;
     if (destino === 'Vendido' && pneu.status !== 'Estoque') {
         showToast('Só é possível registrar venda de pneu em estoque.', 'error');
@@ -1395,11 +1410,11 @@ function confirmarMovimentacao(e, pneuId, destino) {
         usuario: getUsuarioAtual()
     };
 
-    window.rtdb.ref().update(updates).then(() => {
+    salvarUpdatesSeguros(updates).then(() => {
         closeModal();
         showToast(`Pneu movido para ${destino}!`, "success");
-    }).catch(() => {
-        showToast("Não foi possível salvar a movimentação. Tente novamente.", "error");
+    }).catch(erro => {
+        showToast(erro.message || 'Não foi possível salvar a movimentação. Tente novamente.', 'error');
     });
 }
 
@@ -1596,8 +1611,9 @@ function deletarVeiculo(id, placa) {
         });
         updates[`veiculos/${id}`] = null;
 
-        window.rtdb.ref().update(updates)
-            .then(() => showToast("Veículo removido! Pneus retornaram ao estoque.", "success"));
+        salvarUpdatesSeguros(updates)
+            .then(() => showToast("Veículo removido! Pneus retornaram ao estoque.", "success"))
+            .catch(erro => showToast(erro.message, 'error'));
     }
 }
 
@@ -1605,16 +1621,17 @@ function deletarVeiculo(id, placa) {
 // VISÃO DE TABELA DE PNEUS
 // ====================================================
 function renderPneusView(container) {
-    const pneusFiltrados = state.pneus.filter(p => 
-        (p.fuego && p.fuego.toLowerCase().includes(state.searchTerm.toLowerCase())) ||
-        (p.marca && p.marca.toLowerCase().includes(state.searchTerm.toLowerCase()))
+    const pneusFiltrados = state.pneus.filter(p => !!p.arquivado === state.mostrarArquivados &&
+        (String(p.fuego || '').toLowerCase().includes(state.searchTerm.toLowerCase()) ||
+        String(p.marca || '').toLowerCase().includes(state.searchTerm.toLowerCase()))
     );
 
     container.innerHTML = `
         <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <div class="p-5 border-b border-slate-100 flex justify-between items-center">
-                <h3 class="font-bold text-slate-800 text-sm">LISTA DE PNEUS (${pneusFiltrados.length})</h3>
-                <div class="flex gap-2">
+            <div class="p-5 border-b border-slate-100 flex flex-wrap gap-3 justify-between items-center">
+                <h3 class="font-bold text-slate-800 text-sm">${state.mostrarArquivados ? 'PNEUS ARQUIVADOS' : 'LISTA DE PNEUS'} (${pneusFiltrados.length})</h3>
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="alternarArquivados()" class="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold">${state.mostrarArquivados ? 'Ver ativos' : 'Ver arquivados'}</button>
                     <button onclick="showAddPneuHistoricoModal()" class="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5">
                         <i class="fas fa-clock-rotate-left"></i> Pneu Existente (com Histórico)
                     </button>
@@ -1664,12 +1681,12 @@ function renderPneusView(container) {
                                         </span>
                                     </td>
                                     <td class="p-3.5 text-right">
-                                        ${pneu.status === 'Estoque' ? `
+                                        ${!pneu.arquivado && pneu.status === 'Estoque' ? `
                                         <button onclick="showBaixaPneuModal('${pneu.id}', 'Descartado')" class="text-red-600 mr-2">Descartar</button>
                                         <button onclick="showBaixaPneuModal('${pneu.id}', 'Vendido')" class="text-blue-600 mr-2">Registrar venda</button>
                                         ` : ''}
                                         <button onclick="showHistoricoPneu('${pneu.id}')" title="Ver histórico" class="text-slate-400 hover:text-blue-600 mr-2"><i class="fas fa-clock-rotate-left"></i></button>
-                                        <button onclick="deletarPneu('${pneu.id}')" title="Excluir" class="text-slate-400 hover:text-red-500"><i class="fas fa-trash-can"></i></button>
+                                        <button onclick="deletarPneu('${pneu.id}')" title="${pneu.arquivado ? 'Restaurar cadastro' : 'Arquivar cadastro'}" class="text-slate-500 hover:text-blue-600">${pneu.arquivado ? 'Restaurar' : 'Arquivar'}</button>
                                     </td>
                                 </tr>
                             `;
@@ -1732,7 +1749,7 @@ function showHistoricoPneu(pneuId) {
                 ` : eventos.map(ev => `
                     <div class="border border-slate-200 rounded-xl p-3 text-xs">
                         <div class="flex justify-between items-center mb-1">
-                            <span class="font-bold text-slate-800">${escapeHtml(ev.tipo)}</span>
+                            <span class="font-bold text-slate-800">${escapeHtml(ev.tipo)}${ev.estornado ? ' (ESTORNADO)' : ''}</span>
                             <span class="text-slate-400">${new Date(ev.data).toLocaleString('pt-BR')}</span>
                         </div>
                         ${ev.usuario ? `<div class="text-[10px] text-blue-600 font-bold mb-1"><i class="fas fa-user"></i> ${escapeHtml(ev.usuario)}</div>` : ''}
@@ -2034,6 +2051,7 @@ function salvarPneuHistorico(e) {
     const status = document.getElementById('ph-status').value;
 
     const existente = state.pneus.find(p => String(p.fuego) === String(fuego));
+    if (existente && existente.arquivado) { showToast('Este número de fogo está arquivado. Restaure o cadastro existente.', 'error'); return; }
     if (existente && !isPneuProvisorio(existente)) {
         showToast(`Já existe um pneu cadastrado com o número de fogo ${fuego}!`, "error");
         return;
@@ -2061,7 +2079,7 @@ function salvarPneuHistorico(e) {
             tipoBanda: tipoBanda || null,
             usuario: getUsuarioAtual()
         };
-        window.rtdb.ref().update(updates).then(() => {
+        salvarUpdatesSeguros(updates).then(() => {
             closeModal();
             showToast('Pneu #' + fuego + ' era provisório — dados completados (marca/modelo/tipo). Posição e status mantidos.', 'success');
         }).catch(e => showToast('Erro: ' + e.message, 'error'));
@@ -2132,10 +2150,10 @@ function salvarPneuHistorico(e) {
         usuario: getUsuarioAtual()
     };
 
-    window.rtdb.ref().update(updates).then(() => {
+    salvarUpdatesSeguros(updates).then(() => {
         closeModal();
         showToast(`Pneu ${fuego} cadastrado com histórico (${kmAnterior.toLocaleString('pt-BR')} km e ${qtdReformas} reforma(s) já registrados)!`, "success");
-    });
+    }).catch(erro => showToast(erro.message, 'error'));
 }
 
 function showAddPneuModal() {
@@ -2232,7 +2250,7 @@ function salvarPneusEmLote(e) {
     fuegosDigitados.forEach(f => {
         const ex = porFogo[String(f)];
         if (!ex) paraCriar.push(f);
-        else if (isPneuProvisorio(ex)) paraMerge.push(ex);
+        else if (!ex.arquivado && isPneuProvisorio(ex)) paraMerge.push(ex);
         else bloqueados.push(f);
     });
 
@@ -2309,7 +2327,7 @@ function salvarPneusEmLote(e) {
         };
     });
 
-    window.rtdb.ref().update(updates).then(() => {
+    salvarUpdatesSeguros(updates).then(() => {
         closeModal();
         let msg = '';
         if (paraCriar.length) msg += paraCriar.length + ' cadastrado(s). ';
@@ -2319,11 +2337,22 @@ function salvarPneusEmLote(e) {
     }).catch(e => showToast('Erro: ' + e.message, 'error'));
 }
 
-function deletarPneu(id) {
-    if (confirm(`Confirma excluir este pneu?`)) {
-        window.rtdb.ref(`pneus/${id}`).remove()
-            .then(() => showToast("Pneu removido!", "success"));
-    }
+function alternarArquivados() {
+    state.mostrarArquivados = !state.mostrarArquivados;
+    renderApp();
+}
+
+async function deletarPneu(id) {
+    const pneu = state.pneus.find(p => p.id === id);
+    if (!pneu) return;
+    const arquivar = !pneu.arquivado;
+    if (!confirm(arquivar ? 'Arquivar este cadastro? Histórico e custos serão preservados. Pneus montados precisam ser retirados antes.' : 'Restaurar este cadastro para a lista de pneus ativos?')) return;
+    const usuario = getUsuarioAtual(), data = Date.now();
+    const historicoId = window.rtdb.ref('historico').push().key;
+    try {
+        await executarOperacaoSegura(raiz => OperacoesPneus.arquivar(raiz, id, arquivar, usuario, data, historicoId));
+        showToast(arquivar ? 'Cadastro arquivado. Histórico preservado.' : 'Cadastro restaurado.', 'success');
+    } catch (erro) { showToast(erro.message, 'error'); }
 }
 
 // ====================================================
@@ -2350,7 +2379,7 @@ function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     const bgColor = type === 'success' ? 'bg-emerald-600' : 'bg-red-600';
     toast.className = `${bgColor} text-white px-4 py-3 rounded-xl shadow-lg text-xs font-bold flex items-center gap-2 mb-2`;
-    toast.innerHTML = message;
+    toast.textContent = message;
     toastContainer.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
 }

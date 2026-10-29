@@ -1,0 +1,13 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null && (auth.uid === 'eHk5Xl0K3fc0NfIAXoemlfZz0UK2' || auth.uid === 'YRDl63klI6VExSFO8Gbhs6iKQBW2')",
+    "solicitacoes": {
+      ".read": "auth != null",
+      ".write": true
+    },
+    "$other": {
+      ".write": "auth != null && (auth.uid === 'eHk5Xl0K3fc0NfIAXoemlfZz0UK2' || auth.uid === 'YRDl63klI6VExSFO8Gbhs6iKQBW2')"
+    }
+  }
+}

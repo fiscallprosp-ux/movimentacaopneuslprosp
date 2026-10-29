@@ -1,0 +1,13 @@
+{
+  "name": "gestao-pneus-lprosp",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "test:firebase": "node --test tests/firebase.emulator.cjs",
+    "test:emulator": "npx -y firebase-tools@latest emulators:exec --only database --project demo-pneus-lprosp \"npm run test:firebase\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "2.0.7",
+    "firebase": "9.22.1"
+  }
+}
