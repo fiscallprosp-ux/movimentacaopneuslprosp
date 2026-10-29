@@ -1273,6 +1273,15 @@ function handleDropToZone(e, destinoStatus) {
     if (pneu) showDesmontarModal(pneu, destinoStatus);
 }
 
+function showBaixaPneuModal(pneuId, destino) {
+    const pneu = state.pneus.find(p => p.id === pneuId);
+    if (!pneu || pneu.status !== 'Estoque' || !['Descartado', 'Vendido'].includes(destino)) {
+        showToast('A baixa exige um pneu em estoque e um destino válido.', 'error');
+        return;
+    }
+    showDesmontarModal(pneu, destino);
+}
+
 function showDesmontarModal(pneu, destino) {
     const veiculo = state.veiculos.find(v => v.id === pneu.veiculoId);
     openModal(`
@@ -1293,6 +1302,12 @@ function showDesmontarModal(pneu, destino) {
                     <label class="block text-xs font-bold text-slate-600 mb-1">KM ATUAL DO VEÍCULO</label>
                     <input type="number" id="drag-km" value="${veiculo ? (veiculo.kmAtual || 0) : ''}" placeholder="${veiculo ? '' : 'Pneu já estava fora de veículo'}" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800" ${veiculo ? 'required' : ''}>
                 </div>
+                ${destino === 'Vendido' ? `
+                <div>
+                    <label for="drag-valor-venda" class="block text-xs font-bold text-slate-600 mb-1">VALOR DA VENDA (R$)</label>
+                    <input type="number" min="0" step="0.01" id="drag-valor-venda" required class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800">
+                </div>
+                ` : ''}
                 ${destino === 'Reforma' ? `
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">CUSTO DA REFORMA (R$)</label>
@@ -1318,6 +1333,12 @@ function confirmarMovimentacao(e, pneuId, destino) {
 
     const pneu = state.pneus.find(p => p.id === pneuId);
     if (!pneu) { closeModal(); return; }
+    if (!['Estoque', 'Reforma', 'Descartado', 'Vendido'].includes(destino)) return;
+    if (destino === 'Vendido' && pneu.status !== 'Estoque') {
+        showToast('Só é possível registrar venda de pneu em estoque.', 'error');
+        return;
+    }
+    if (pneu.status === destino) { closeModal(); return; }
 
     const veiculo = state.veiculos.find(v => v.id === pneu.veiculoId);
 
@@ -1332,7 +1353,13 @@ function confirmarMovimentacao(e, pneuId, destino) {
     const kmRodadoTotalNovo = (pneu.kmRodadoTotal || 0) + cicloKm;
     const qtdReformasNova = destino === 'Reforma' ? (pneu.qtdReformas || 0) + 1 : (pneu.qtdReformas || 0);
 
+    const valorVenda = destino === 'Vendido' ? Number(document.getElementById('drag-valor-venda').value) : null;
+    if (destino === 'Vendido' && (!Number.isFinite(valorVenda) || valorVenda < 0)) {
+        showToast('Informe um valor de venda válido.', 'error');
+        return;
+    }
     const updates = {};
+    if (destino === 'Vendido') updates[`pneus/${pneuId}/valorVenda`] = valorVenda;
     if (tipoBandaSel) updates[`pneus/${pneuId}/tipoBanda`] = tipoBandaSel;
     updates[`pneus/${pneuId}/status`] = destino;
     updates[`pneus/${pneuId}/veiculoId`] = null;
@@ -1353,7 +1380,7 @@ function confirmarMovimentacao(e, pneuId, destino) {
     updates[`historico/${histRef.key}`] = {
         pneuId: pneuId,
         fuego: pneu.fuego,
-        tipo: destino === 'Estoque' ? 'Desmontagem' : (destino === 'Reforma' ? 'Reforma' : 'Descarte'),
+        tipo: destino === 'Estoque' ? 'Desmontagem' : (destino === 'Reforma' ? 'Reforma' : (destino === 'Vendido' ? 'Venda' : 'Descarte')),
         data: Date.now(),
         veiculoId: pneu.veiculoId || null,
         placa: veiculo ? veiculo.placa : null,
@@ -1363,6 +1390,7 @@ function confirmarMovimentacao(e, pneuId, destino) {
         sulco: null,
         tipoBanda: tipoBandaSel || pneu.tipoBanda || null,
         custo: custoReforma > 0 ? custoReforma : null,
+        valorVenda: valorVenda,
         qtdReformas: destino === 'Reforma' ? qtdReformasNova : null,
         usuario: getUsuarioAtual()
     };
@@ -1370,6 +1398,8 @@ function confirmarMovimentacao(e, pneuId, destino) {
     window.rtdb.ref().update(updates).then(() => {
         closeModal();
         showToast(`Pneu movido para ${destino}!`, "success");
+    }).catch(() => {
+        showToast("Não foi possível salvar a movimentação. Tente novamente.", "error");
     });
 }
 
@@ -1634,6 +1664,10 @@ function renderPneusView(container) {
                                         </span>
                                     </td>
                                     <td class="p-3.5 text-right">
+                                        ${pneu.status === 'Estoque' ? `
+                                        <button onclick="showBaixaPneuModal('${pneu.id}', 'Descartado')" class="text-red-600 mr-2">Descartar</button>
+                                        <button onclick="showBaixaPneuModal('${pneu.id}', 'Vendido')" class="text-blue-600 mr-2">Registrar venda</button>
+                                        ` : ''}
                                         <button onclick="showHistoricoPneu('${pneu.id}')" title="Ver histórico" class="text-slate-400 hover:text-blue-600 mr-2"><i class="fas fa-clock-rotate-left"></i></button>
                                         <button onclick="deletarPneu('${pneu.id}')" title="Excluir" class="text-slate-400 hover:text-red-500"><i class="fas fa-trash-can"></i></button>
                                     </td>
@@ -1674,7 +1708,7 @@ function showHistoricoPneu(pneuId) {
                 </div>
                 <div class="bg-slate-50 rounded-xl p-3 text-center">
                     <div class="text-[10px] text-slate-400 font-bold uppercase">Custo Total</div>
-                    <div class="text-sm font-black text-slate-800">R$ ${custoTotal.toFixed(2)}</div>
+                    <div class="text-sm font-black text-slate-800">${custoTotal !== null ? 'R$ ' + custoTotal.toFixed(2) : 'Não informado'}</div>
                 </div>
                 <div class="bg-slate-50 rounded-xl p-3 text-center">
                     <div class="text-[10px] text-slate-400 font-bold uppercase">Custo/Km</div>
@@ -1708,6 +1742,7 @@ function showHistoricoPneu(pneuId) {
                             ${ev.kmVeiculo != null ? `<span>Km: ${ev.kmVeiculo.toLocaleString('pt-BR')}</span>` : ''}
                             ${ev.kmRodadoCiclo ? `<span>Rodou neste ciclo: ${ev.kmRodadoCiclo.toLocaleString('pt-BR')} km</span>` : ''}
                             ${ev.tipoBanda ? `<span>Tipo: ${escapeHtml(ev.tipoBanda)}</span>` : (ev.sulco != null ? `<span>Sulco: ${ev.sulco} mm</span>` : '')}
+                            ${ev.valorVenda != null ? `<span>Venda: R$ ${Number(ev.valorVenda).toFixed(2)}</span>` : ''}
                             ${ev.custo ? `<span>Custo: R$ ${ev.custo.toFixed(2)}</span>` : ''}
                         </div>
                     </div>
@@ -2324,3 +2359,4 @@ function escapeHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
