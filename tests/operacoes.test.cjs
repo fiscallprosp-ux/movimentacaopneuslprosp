@@ -25,6 +25,8 @@ function sistema(inicial = base()) {
             return {
                 push: () => ({ key: 'k' + (++contador) }),
                 once: async () => ({ val: () => O.copiar(banco) }),
+                on: (_evento, callback) => callback({ val: () => O.copiar(banco) }),
+                off() {},
                 transaction: async fn => {
                     let novo = fn(O.copiar(banco));
                     if (conflito) {

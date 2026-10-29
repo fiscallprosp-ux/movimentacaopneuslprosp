@@ -550,16 +550,23 @@ function salvarSolicitacaoPendente(id, patch) {
 // Uma transação confirma o estado atual e grava toda a operação de uma vez.
 async function executarOperacaoSegura(preparar) {
     const ref = window.rtdb.ref();
-    // Carrega o estado antes da primeira tentativa (o cache inicial pode ser null).
-    await ref.once('value');
-    let falha;
-    const resultado = await ref.transaction(atual => {
-        falha = null;
-        try { return preparar(OperacoesPneus.copiar(atual || {})); }
-        catch (erro) { falha = erro; return; }
-    }, undefined, false);
-    if (!resultado.committed) throw falha || new Error('A operação não foi concluída. Atualize a tela e tente novamente.');
-    return resultado;
+    // Mantém a leitura ativa: once() sozinho pode liberar o cache antes da transação.
+    let carregado;
+    const pronto = new Promise((resolve, reject) => {
+        carregado = () => resolve();
+        ref.on('value', carregado, reject);
+    });
+    try {
+        await pronto;
+        let falha;
+        const resultado = await ref.transaction(atual => {
+            falha = null;
+            try { return preparar(OperacoesPneus.copiar(atual || {})); }
+            catch (erro) { falha = erro; return; }
+        }, undefined, false);
+        if (!resultado.committed) throw falha || new Error('A operação não foi concluída. Atualize a tela e tente novamente.');
+        return resultado;
+    } finally { ref.off('value', carregado); }
 }
 
 function salvarUpdatesSeguros(updates) {

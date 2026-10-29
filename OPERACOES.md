@@ -15,11 +15,14 @@
 
 ```sh
 npm test
+npm run test:emulator
 node --check js/app.js
 node --check js/operacoes.js
 ```
 
-Os testes executam o código da aplicação com um banco simulado, incluindo repetição de transações e omissão de campos nulos. Não usam nem alteram registros de produção. O emulador oficial não foi executado nesta máquina porque Java não está instalado. A política de acesso precisa ser validada no emulador ou em homologação antes da publicação.
+Os 21 testes locais executam o código da aplicação com um banco simulado, incluindo repetição de transações e omissão de campos nulos. Outros 7 testes usam o emulador oficial do Realtime Database e o mesmo SDK Firebase 9.22.1 carregado pelo site. Foram validados os acessos dos dois administradores, de outro usuário autenticado e de visitantes, além de montagem e aprovação concorrentes, estorno, nova aprovação e arquivamento/restauração. Todos passaram. Os testes usam somente o projeto local `demo-pneus-lprosp`; não usam nem alteram registros de produção.
+
+O emulador exige Java 21 disponível no PATH. A leitura da raiz permanece ativa até a transação terminar: uma leitura com `once()` isolada pode liberar o cache antes da transação e provocar uma tentativa inicial sem dados.
 
 ## Publicação coordenada
 
